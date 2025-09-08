@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as Print from 'expo-print';
 
 const NUM_ROWS = 23;
 const NUM_COLS = 5;
@@ -50,12 +51,55 @@ export default function EditTableScreen() {
     setTable(Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill('')));
   };
 
+  // Funktion zum Drucken der Tabelle
+  const printTable = async () => {
+    // Erzeuge HTML für die Tabelle
+    const html = `
+      <html>
+        <head>
+          <style>
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #333; padding: 4px; text-align: center; }
+            th { background: #e0e0e0; }
+            td:first-child, th:first-child { background: #f0f0f0; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h2>Tagesplan Anästhesie und Intensivstation SLF</h2>
+          <table>
+            <tr>
+              <th>Dienst</th>
+              <th>Montag</th>
+              <th>Dienstag</th>
+              <th>Mittwoch</th>
+              <th>Donnerstag</th>
+              <th>Freitag</th>
+            </tr>
+            ${table.map((row, rowIdx) => `
+              <tr>
+                <td>${firstColumnEntries[rowIdx] || ""}</td>
+                ${row.map(cell => `<td>${cell}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </table>
+        </body>
+      </html>
+    `;
+    await Print.printAsync({ html });
+  };
+
   const inputRefs: Array<Array<TextInput | null>> = Array(NUM_ROWS).fill(null).map(() => []);
 
   return (
     <SafeAreaView style={styles.fullContainer}>
       <Text style={styles.header}>Tagesplan Anästhesie und Intensivstation SLF</Text>
-      <Button title="Tabelle löschen" onPress={clearTable} />
+      <View style={styles.buttonRow}>
+        <View style={{ flexDirection: "row", justifyContent: "center", flex: 1 }}>
+          <Button title="Tabelle löschen" onPress={clearTable} />
+          <View style={{ width: 16 }} /> {/* Abstand zwischen den Buttons */}
+          <Button title="Tabelle drucken" onPress={printTable} />
+        </View>
+      </View>
       <ScrollView horizontal style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
           {/* Tabellenkopf */}
@@ -64,7 +108,7 @@ export default function EditTableScreen() {
             {["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
               <Text
                 key={colIdx}
-                style={[styles.cell, styles.headerCell, { minWidth: 90, textAlign: "center" }]}
+                style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: "center" }]}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
@@ -168,5 +212,13 @@ const styles = StyleSheet.create({
     maxWidth: 160,
     textAlign: "center",
     flex: 1
+  },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginVertical: 8,
+    marginHorizontal: 16,
+    alignSelf: "center"
   }
 });
