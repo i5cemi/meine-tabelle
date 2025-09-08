@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, Button } from 'react-native';
+import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 const NUM_ROWS = 23;
 const NUM_COLS = 5;
@@ -21,7 +21,7 @@ const firstColumnEntries = [
   "Anästhesie Sprechstunde",
   "Notarzt",
   "Katheter u. Sprechstunde",
-  "ITS OA",
+  "ITS OA / OÄ",
   "ITS Regeldienst",
   "ITS Bereitschaft",
   "IMC",
@@ -50,9 +50,11 @@ export default function EditTableScreen() {
     setTable(Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill('')));
   };
 
+  const inputRefs: Array<Array<TextInput | null>> = Array(NUM_ROWS).fill(null).map(() => []);
+
   return (
     <SafeAreaView style={styles.fullContainer}>
-      <Text style={styles.header}>Bearbeitbare Tabelle (5x23)</Text>
+      <Text style={styles.header}>Tagesplan Anästhesie und Intensivstation SLF</Text>
       <Button title="Tabelle löschen" onPress={clearTable} />
       <ScrollView horizontal style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
@@ -85,7 +87,44 @@ export default function EditTableScreen() {
                     style={styles.cell}
                     value={cell}
                     onChangeText={(value) => handleCellChange(rowIdx, colIdx, value)}
-                    placeholder={`Zelle ${rowIdx + 1},${colIdx + 1}`}
+                    onEndEditing={() => {
+                      const value = table[rowIdx][colIdx];
+                      const columnValues = table.map((r, idx) => idx !== rowIdx ? r[colIdx] : null);
+                      if (value !== "" && columnValues.includes(value)) {
+                        const newTable = table.map((r, rIdx2) =>
+                          r.map((c, cIdx2) =>
+                            rIdx2 === rowIdx && cIdx2 === colIdx ? "FEHLER" : c
+                          )
+                        );
+                        setTable(newTable);
+                      }
+                    }}
+                    onSubmitEditing={() => {
+                      const value = table[rowIdx][colIdx];
+                      const columnValues = table.map((r, idx) => idx !== rowIdx ? r[colIdx] : null);
+                      if (value !== "" && columnValues.includes(value)) {
+                        const newTable = table.map((r, rIdx2) =>
+                          r.map((c, cIdx2) =>
+                            rIdx2 === rowIdx && cIdx2 === colIdx ? "FEHLER" : c
+                          )
+                        );
+                        setTable(newTable);
+                        return;
+                      }
+                      // Springe in die nächste Zelle
+                      const nextCol = colIdx + 1;
+                      const nextRow = rowIdx + (nextCol >= NUM_COLS ? 1 : 0);
+                      const nextColIdx = nextCol % NUM_COLS;
+                      if (nextRow < NUM_ROWS) {
+                        const nextInputRef = inputRefs[nextRow]?.[nextColIdx];
+                        nextInputRef?.focus();
+                      }
+                    }}
+                    ref={ref => {
+                      if (!inputRefs[rowIdx]) inputRefs[rowIdx] = [];
+                      inputRefs[rowIdx][colIdx] = ref;
+                    }}
+                    blurOnSubmit={false}
                   />
                 ))}
               </View>
