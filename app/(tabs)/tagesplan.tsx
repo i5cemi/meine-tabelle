@@ -1,3 +1,4 @@
+import { Stack } from 'expo-router';
 import React, { useState, useRef, useEffect } from 'react';
 import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Print from 'expo-print';
@@ -141,8 +142,10 @@ export default function EditTableScreen() {
   const inputRefs: Array<Array<TextInput | null>> = Array(NUM_ROWS).fill(null).map(() => []);
 
   return (
-    <SafeAreaView style={styles.fullContainerCentered}>
-      <Text style={styles.headerCentered}>Tagesplan Anästhesie und Intensivstation SLF</Text>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={styles.fullContainerCentered}>
+  <Text style={styles.headerCentered}>Tagesplan Anästhesie und Intensivstation SLF</Text>
       <View style={styles.buttonRowCentered}>
         <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
           <Button title="Tabelle löschen" onPress={clearTable} disabled={!canEdit} />
@@ -239,6 +242,7 @@ export default function EditTableScreen() {
         )}
       </View>
     </SafeAreaView>
+    </>
   );
 }
 
