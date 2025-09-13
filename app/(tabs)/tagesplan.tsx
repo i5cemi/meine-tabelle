@@ -1,9 +1,8 @@
-import { Stack } from 'expo-router';
-import React, { useState, useRef, useEffect } from 'react';
-import { useWindowDimensions } from 'react-native';
-import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import * as Print from 'expo-print';
 import { createClient } from '@supabase/supabase-js';
+import * as Print from 'expo-print';
+import { Stack } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 const NUM_ROWS = 23;
 const NUM_COLS = 5;
@@ -38,6 +37,7 @@ const firstColumnEntries = [
 const supabase = createClient('https://ykvrubvoohhoqbsyzdva.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrdnJ1YnZvb2hob3Fic3l6ZHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2OTE3MjcsImV4cCI6MjA3MzI2NzcyN30.q4Pp7L-HP2g-tPuhcjuKRaJhnRvgMnbu7KpcArqGfuw');
 
 export default function EditTableScreen() {
+  const today = new Date();
   // Schätze die Tabellenhöhe (z.B. 24px pro Zeile + Header)
   const rowHeight = 40;
   const headerHeight = 40;
@@ -78,7 +78,12 @@ export default function EditTableScreen() {
     d.setDate(d.getDate() + 4);
     return d;
   }
-  const [weekOffset, setWeekOffset] = useState(0);
+  // Berechne Offset zur aktuellen KW (Differenz zwischen aktueller KW und KW des Startdatums)
+  const startMonday = getMonday(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const startWeek = getWeekNumber(startMonday);
+  const currentYear = today.getFullYear();
+  const initialOffset = 0; // Standardmäßig 0, wird im useEffect gesetzt
+  const [weekOffset, setWeekOffset] = useState(initialOffset);
   // Hilfsfunktionen für KW und Datum
   function getWeekNumber(date: Date) {
     const target = new Date(date.valueOf());
@@ -99,7 +104,6 @@ export default function EditTableScreen() {
     return new Date(d.setDate(diff));
   }
   // Berechne Montag und Freitag der aktuellen/verschobenen KW
-  const today = new Date();
   const monday = getMonday(new Date(today.getFullYear(), today.getMonth(), today.getDate() + weekOffset * 7));
   const friday = getFriday(monday);
   const currentWeek = getWeekNumber(monday);
@@ -162,6 +166,16 @@ export default function EditTableScreen() {
 
   // Daten beim Start laden
   useEffect(() => {
+    // Setze Offset beim ersten Render auf die aktuelle KW
+    if (weekOffset === 0) {
+      const now = new Date();
+      const thisMonday = getMonday(now);
+      const thisWeek = getWeekNumber(thisMonday);
+      const thisYear = now.getFullYear();
+      // Berechne Offset zur aktuellen KW
+      const offset = (thisYear - currentYear) * 52 + (thisWeek - startWeek);
+      if (offset !== 0) setWeekOffset(offset);
+    }
     // Lade initial die aktuelle KW
     loadTableForWeek(monday);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,24 +295,26 @@ export default function EditTableScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.fullContainerCentered}>
-        <Text style={styles.headerCentered}>
-          Tagesplan Anästhesie und Intensivstation SLF
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-          <View style={{ marginRight: 8 }}>
-            <Button title="<" onPress={async () => {
-              await saveTableForCurrentWeek();
-              setWeekOffset(weekOffset - 1);
-            }} />
-          </View>
-          <Text style={{ fontSize: 16, fontWeight: 'bold' }}>
-            KW {currentWeek}, {dateString}
+        <View style={{ alignItems: 'center', width: '100%' }}>
+          <Text style={styles.headerCentered}>
+            Tagesplan Anästhesie und Intensivstation SLF
           </Text>
-          <View style={{ marginLeft: 8 }}>
-            <Button title=">" onPress={async () => {
-              await saveTableForCurrentWeek();
-              setWeekOffset(weekOffset + 1);
-            }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+            <View style={{ marginRight: 8 }}>
+              <Button title="<" onPress={async () => {
+                await saveTableForCurrentWeek();
+                setWeekOffset(weekOffset - 1);
+              }} />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', textAlign: 'center', minWidth: 220 }}>
+              KW {currentWeek}, {dateString}
+            </Text>
+            <View style={{ marginLeft: 8 }}>
+              <Button title=">" onPress={async () => {
+                await saveTableForCurrentWeek();
+                setWeekOffset(weekOffset + 1);
+              }} />
+            </View>
           </View>
         </View>
       <View style={styles.buttonRowCentered}>
@@ -324,16 +340,16 @@ export default function EditTableScreen() {
         </View>
       </View>
       <View style={styles.tableWrapperCentered}>
-        <View style={{ flex: 1, width: '100%' }}>
-          <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: "center", justifyContent: "center", minWidth: 700 }}>
-            <View style={{ minWidth: 700, alignItems: "center", justifyContent: "center" }}>
+        <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+          <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center', minWidth: 700 }}>
+            <View style={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
               {/* Tabellenkopf */}
-              <View style={[styles.row, { justifyContent: "center", alignItems: "center" }] }>
+              <View style={[styles.row, { justifyContent: 'center', alignItems: 'center' }] }>
                 <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
                 { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
                   <Text
                     key={colIdx}
-                    style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: "center" }]}
+                    style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: 'center' }]}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
@@ -342,7 +358,7 @@ export default function EditTableScreen() {
                 ))}
               </View>
               {/* Tabelleninhalt mit vertikalem Slider */}
-              <ScrollView style={{ maxHeight: screenHeight - 250, width: '100%' }} contentContainerStyle={{ minWidth: 700 }}>
+              <ScrollView style={{ maxHeight: screenHeight - 250, width: 700, alignSelf: 'center' }} contentContainerStyle={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
                 {renderTable()}
               </ScrollView>
             </View>
