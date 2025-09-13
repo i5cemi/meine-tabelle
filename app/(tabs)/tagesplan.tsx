@@ -319,9 +319,9 @@ export default function EditTableScreen() {
         </View>
       <View style={styles.buttonRowCentered}>
         <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
-          <Button title="Tabelle löschen" onPress={clearTable} disabled={!canEdit} />
+          <Button title="Löschen" onPress={clearTable} disabled={!canEdit} />
           <View style={{ width: 16 }} />
-          <Button title="Tabelle drucken" onPress={printTable} />
+          <Button title="Drucken" onPress={printTable} />
           <View style={{ width: 16 }} />
           <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
           <View style={{ width: 16 }} />
@@ -434,12 +434,14 @@ const styles = StyleSheet.create({
   passwordInputCentered: {
   borderWidth: 1,
   borderColor: "#ccc",
-  padding: 6,
+  paddingVertical: 4,
+  paddingHorizontal: 4,
   marginHorizontal: 8,
-  minWidth: 50,
+  width: 80,     // gewünschte Breite
+  minWidth: 0,   // verhindert, dass minWidth blockiert
   backgroundColor: "#fff",
   textAlign: "center",
-  alignSelf: "center"
+  alignSelf: "center",
   },
   tableWrapperCentered: {
     width: "100%",

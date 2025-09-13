@@ -7,6 +7,23 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function RootLayout() {
+  // Dev-only: Suppress noisy RNW deprecation warnings on web about shadow* and props.pointerEvents
+  if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+    const originalWarn = console.warn;
+    // @ts-ignore allow monkey patch in dev
+    console.warn = (...args: any[]) => {
+      const msg = String(args?.[0] ?? '');
+      if (
+        msg.includes('"shadow*" style props are deprecated. Use "boxShadow"') ||
+        msg.includes('props.pointerEvents is deprecated. Use style.pointerEvents')
+      ) {
+        return; // swallow
+      }
+      // pass through everything else
+      originalWarn.apply(console, args as any);
+    };
+  }
+
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
