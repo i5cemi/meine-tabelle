@@ -1,7 +1,9 @@
 import { Stack } from 'expo-router';
 import React, { useState, useRef, useEffect } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Print from 'expo-print';
+import { createClient } from '@supabase/supabase-js';
 
 const NUM_ROWS = 23;
 const NUM_COLS = 5;
@@ -33,7 +35,122 @@ const firstColumnEntries = [
   "Anästhesie Spätdienst"
 ];
 
+const supabase = createClient('https://ykvrubvoohhoqbsyzdva.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrdnJ1YnZvb2hob3Fic3l6ZHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2OTE3MjcsImV4cCI6MjA3MzI2NzcyN30.q4Pp7L-HP2g-tPuhcjuKRaJhnRvgMnbu7KpcArqGfuw');
+
 export default function EditTableScreen() {
+  // Schätze die Tabellenhöhe (z.B. 24px pro Zeile + Header)
+  const rowHeight = 40;
+  const headerHeight = 40;
+  const estimatedTableHeight = NUM_ROWS * rowHeight + headerHeight;
+  // Hilfsfunktion: KW-Id für Supabase
+  function getSupabaseIdForWeek(monday: Date) {
+    const year = monday.getFullYear();
+    const week = getWeekNumber(monday);
+    return year * 100 + week;
+  }
+
+  // Tabelleninhalt für aktuelle KW speichern
+  async function saveTableForCurrentWeek() {
+    const id = getSupabaseIdForWeek(monday);
+    await supabase
+      .from('tagesplan')
+      .upsert({ id, inhalt: table })
+      .then(({ error }) => {
+        if (error) console.log('Supabase Fehler beim Speichern:', error);
+      });
+  }
+
+  // Tabelleninhalt für neue KW laden
+  async function loadTableForWeek(newMonday: Date) {
+    const id = getSupabaseIdForWeek(newMonday);
+    const { data, error } = await supabase
+      .from('tagesplan')
+      .select('inhalt')
+      .eq('id', id)
+      .single();
+    if (data && data.inhalt) setTable(data.inhalt);
+    else setTable(Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill('')));
+    if (error) console.log('Supabase Ladefehler:', error);
+  }
+  // Hilfsfunktionen für KW und Datum
+  function getFriday(monday: Date) {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + 4);
+    return d;
+  }
+  const [weekOffset, setWeekOffset] = useState(0);
+  // Hilfsfunktionen für KW und Datum
+  function getWeekNumber(date: Date) {
+    const target = new Date(date.valueOf());
+    const dayNr = (date.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNr + 3);
+    const firstThursday = target.valueOf();
+    target.setMonth(0, 1);
+    if (target.getDay() !== 4) {
+      target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+    }
+    const weekNumber = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+    return weekNumber;
+  }
+  function getMonday(date: Date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(d.setDate(diff));
+  }
+  // Berechne Montag und Freitag der aktuellen/verschobenen KW
+  const today = new Date();
+  const monday = getMonday(new Date(today.getFullYear(), today.getMonth(), today.getDate() + weekOffset * 7));
+  const friday = getFriday(monday);
+  const currentWeek = getWeekNumber(monday);
+  const dateString = `${monday.toLocaleDateString('de-DE')} - ${friday.toLocaleDateString('de-DE')}`;
+  const { height: screenHeight } = useWindowDimensions();
+  // Tabelleninhalt als eigene Funktion
+  function renderTable() {
+    return table.map((row, rowIdx) => (
+      <View key={rowIdx} style={[styles.row, { justifyContent: "center", alignItems: "center" }]}> 
+        {/* Erste Spalte: nicht editierbar */}
+        <Text style={[styles.cell, styles.firstColCell]}>
+          {firstColumnEntries[rowIdx] || ""}
+        </Text>
+        {/* Editierbare Zellen */}
+        {row.map((cell, colIdx) => (
+          <TextInput
+            key={colIdx}
+            style={[styles.cell, !canEdit && styles.disabledCell]}
+            value={cell}
+            editable={canEdit}
+            onChangeText={(value) => handleCellChange(rowIdx, colIdx, value)}
+            onEndEditing={() => handleCellValidate(rowIdx, colIdx)}
+            onBlur={() => handleCellValidate(rowIdx, colIdx)}
+            onKeyPress={({ nativeEvent }) => {
+              if (nativeEvent.key === 'Tab') {
+                handleCellValidate(rowIdx, colIdx);
+              }
+            }}
+            onSubmitEditing={() => {
+              handleCellValidate(rowIdx, colIdx);
+              // Springe in die nächste Zelle
+              if (canEdit) {
+                const nextCol = colIdx + 1;
+                const nextRow = rowIdx + (nextCol >= NUM_COLS ? 1 : 0);
+                const nextColIdx = nextCol % NUM_COLS;
+                if (nextRow < NUM_ROWS) {
+                  const nextInputRef = inputRefs[nextRow]?.[nextColIdx];
+                  nextInputRef?.focus();
+                }
+              }
+            }}
+            ref={ref => {
+              if (!inputRefs[rowIdx]) inputRefs[rowIdx] = [];
+              inputRefs[rowIdx][colIdx] = ref;
+            }}
+            blurOnSubmit={false}
+          />
+        ))}
+      </View>
+    ));
+  }
   const [table, setTable] = useState<string[][]>(
     Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill(''))
   );
@@ -41,7 +158,14 @@ export default function EditTableScreen() {
   const [password, setPassword] = useState('');
   const [canEdit, setCanEdit] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  // Daten beim Start laden
+  useEffect(() => {
+    // Lade initial die aktuelle KW
+    loadTableForWeek(monday);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekOffset]);
 
   // Countdown-Logik
   useEffect(() => {
@@ -141,16 +265,49 @@ export default function EditTableScreen() {
 
   const inputRefs: Array<Array<TextInput | null>> = Array(NUM_ROWS).fill(null).map(() => []);
 
+  // Daten nach Ausloggen speichern
+  useEffect(() => {
+    if (!canEdit) {
+      supabase
+        .from('tagesplan')
+        .upsert({ id: 1, inhalt: table })
+        .then(({ error }) => {
+          if (error) console.log('Supabase Fehler:', error);
+        });
+    }
+  }, [canEdit, table]);
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.fullContainerCentered}>
-  <Text style={styles.headerCentered}>Tagesplan Anästhesie und Intensivstation SLF</Text>
+        <Text style={styles.headerCentered}>
+          Tagesplan Anästhesie und Intensivstation SLF
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+          <View style={{ marginRight: 8 }}>
+            <Button title="<" onPress={async () => {
+              await saveTableForCurrentWeek();
+              setWeekOffset(weekOffset - 1);
+            }} />
+          </View>
+          <Text style={{ fontSize: 16, fontWeight: 'bold' }}>
+            KW {currentWeek}, {dateString}
+          </Text>
+          <View style={{ marginLeft: 8 }}>
+            <Button title=">" onPress={async () => {
+              await saveTableForCurrentWeek();
+              setWeekOffset(weekOffset + 1);
+            }} />
+          </View>
+        </View>
       <View style={styles.buttonRowCentered}>
         <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
           <Button title="Tabelle löschen" onPress={clearTable} disabled={!canEdit} />
           <View style={{ width: 16 }} />
           <Button title="Tabelle drucken" onPress={printTable} />
+          <View style={{ width: 16 }} />
+          <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
           <View style={{ width: 16 }} />
           <View style={styles.passwordBoxCentered}>
             <Text>Passwort:</Text>
@@ -167,72 +324,30 @@ export default function EditTableScreen() {
         </View>
       </View>
       <View style={styles.tableWrapperCentered}>
-        <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: "center", justifyContent: "center" }}>
-          <View style={{ minWidth: 700, alignItems: "center", justifyContent: "center" }}>
-            {/* Tabellenkopf */}
-            <View style={[styles.row, { justifyContent: "center", alignItems: "center" }] }>
-              <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
-              { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
-                <Text
-                  key={colIdx}
-                  style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: "center" }]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {day}
-                </Text>
-              ))}
-            </View>
-            {/* Tabelleninhalt mit vertikalem Slider nur bei Bedarf */}
-            <View style={{ maxHeight: '70vh', width: '100%' }}>
-              <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: "center", justifyContent: "center" }}>
-                {table.map((row, rowIdx) => (
-                  <View key={rowIdx} style={[styles.row, { justifyContent: "center", alignItems: "center" }] }>
-                    {/* Erste Spalte: nicht editierbar */}
-                    <Text style={[styles.cell, styles.firstColCell]}>
-                      {firstColumnEntries[rowIdx] || ""}
-                    </Text>
-                    {/* Editierbare Zellen */}
-                    {row.map((cell, colIdx) => (
-                      <TextInput
-                        key={colIdx}
-                        style={[styles.cell, !canEdit && styles.disabledCell]}
-                        value={cell}
-                        editable={canEdit}
-                        onChangeText={(value) => handleCellChange(rowIdx, colIdx, value)}
-                        onEndEditing={() => handleCellValidate(rowIdx, colIdx)}
-                        onBlur={() => handleCellValidate(rowIdx, colIdx)}
-                        onKeyPress={({ nativeEvent }) => {
-                          if (nativeEvent.key === 'Tab') {
-                            handleCellValidate(rowIdx, colIdx);
-                          }
-                        }}
-                        onSubmitEditing={() => {
-                          handleCellValidate(rowIdx, colIdx);
-                          // Springe in die nächste Zelle
-                          if (canEdit) {
-                            const nextCol = colIdx + 1;
-                            const nextRow = rowIdx + (nextCol >= NUM_COLS ? 1 : 0);
-                            const nextColIdx = nextCol % NUM_COLS;
-                            if (nextRow < NUM_ROWS) {
-                              const nextInputRef = inputRefs[nextRow]?.[nextColIdx];
-                              nextInputRef?.focus();
-                            }
-                          }
-                        }}
-                        ref={ref => {
-                          if (!inputRefs[rowIdx]) inputRefs[rowIdx] = [];
-                          inputRefs[rowIdx][colIdx] = ref;
-                        }}
-                        blurOnSubmit={false}
-                      />
-                    ))}
-                  </View>
+        <View style={{ flex: 1, width: '100%' }}>
+          <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: "center", justifyContent: "center", minWidth: 700 }}>
+            <View style={{ minWidth: 700, alignItems: "center", justifyContent: "center" }}>
+              {/* Tabellenkopf */}
+              <View style={[styles.row, { justifyContent: "center", alignItems: "center" }] }>
+                <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
+                { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
+                  <Text
+                    key={colIdx}
+                    style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: "center" }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {day}
+                  </Text>
                 ))}
+              </View>
+              {/* Tabelleninhalt mit vertikalem Slider */}
+              <ScrollView style={{ maxHeight: screenHeight - 250, width: '100%' }} contentContainerStyle={{ minWidth: 700 }}>
+                {renderTable()}
               </ScrollView>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </View>
       </View>
       <View style={styles.countdownBoxCentered}>
         {canEdit ? (
