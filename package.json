@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "export:web": "cross-env EXPO_PUBLIC_BASE_URL=/meine-tabelle/ expo export --platform web --output-dir docs && node ./scripts/postexport-fix-paths.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -43,6 +44,7 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~19.0.10",
+    "cross-env": "^7.0.3",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~9.2.0",
     "typescript": "~5.8.3"
