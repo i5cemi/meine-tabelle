@@ -166,6 +166,7 @@ export default function EditTableScreen() {
   const timerRef = useRef<number | null>(null);
   const suppressSaveRef = useRef(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const tableRef = useRef(table);
 
   // Daten beim Start laden
   useEffect(() => {
@@ -320,7 +321,7 @@ export default function EditTableScreen() {
             // verhindert Autosave-Schleifen
             suppressSaveRef.current = true;
             setTable(next);
-            setTimeout(() => { suppressSaveRef.current = false; }, 0);
+            setTimeout(() => { suppressSaveRef.current = false; }, 1000);
           }
         }
       )
@@ -333,6 +334,46 @@ export default function EditTableScreen() {
       }
     };
   }, [weekId]);
+
+  // Halte tableRef synchron mit aktuellem Tabellenzustand
+  useEffect(() => {
+    tableRef.current = table;
+  }, [table]);
+
+  // Polling-Fallback: wenn nicht bearbeitet wird, alle 8s auf Änderungen prüfen
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        if (canEdit) return; // beim Editieren nicht überschreiben
+        if (suppressSaveRef.current) return; // wenn gerade Realtime angewendet wurde
+
+        const id = getSupabaseIdForWeek(monday);
+        const { data, error } = await supabase
+          .from('tagesplan')
+          .select('inhalt')
+          .eq('id', id)
+          .single();
+
+        if (error) {
+          console.log('Supabase Pollingfehler:', error);
+          return;
+        }
+
+        const remote = data?.inhalt as string[][] | undefined;
+        if (!remote) return;
+
+        const local = tableRef.current;
+        if (JSON.stringify(remote) !== JSON.stringify(local)) {
+          suppressSaveRef.current = true;
+          setTable(remote);
+          setTimeout(() => { suppressSaveRef.current = false; }, 1000);
+        }
+      } catch (e) {
+        // optional: stilles Logging
+      }
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [monday, canEdit]);
 
   return (
     <>
