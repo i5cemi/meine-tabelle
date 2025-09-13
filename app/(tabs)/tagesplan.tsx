@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type RealtimeChannel } from '@supabase/supabase-js';
 import * as Print from 'expo-print';
 import { Stack } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -107,6 +107,7 @@ export default function EditTableScreen() {
   const monday = getMonday(new Date(today.getFullYear(), today.getMonth(), today.getDate() + weekOffset * 7));
   const friday = getFriday(monday);
   const currentWeek = getWeekNumber(monday);
+  const weekId = getSupabaseIdForWeek(monday);
   const dateString = `${monday.toLocaleDateString('de-DE')} - ${friday.toLocaleDateString('de-DE')}`;
   const { height: screenHeight } = useWindowDimensions();
   // Tabelleninhalt als eigene Funktion
@@ -163,6 +164,8 @@ export default function EditTableScreen() {
   const [canEdit, setCanEdit] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const timerRef = useRef<number | null>(null);
+  const suppressSaveRef = useRef(false);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   // Daten beim Start laden
   useEffect(() => {
@@ -279,17 +282,57 @@ export default function EditTableScreen() {
 
   const inputRefs: Array<Array<TextInput | null>> = Array(NUM_ROWS).fill(null).map(() => []);
 
-  // Daten nach Ausloggen speichern
+  // Beim Wechsel von bearbeitbar -> gesperrt (Logout/Timer) einmalig speichern
+  const prevCanEditRef = useRef(canEdit);
   useEffect(() => {
-    if (!canEdit) {
-      supabase
-        .from('tagesplan')
-        .upsert({ id: 1, inhalt: table })
-        .then(({ error }) => {
-          if (error) console.log('Supabase Fehler:', error);
-        });
+    const prev = prevCanEditRef.current;
+    prevCanEditRef.current = canEdit;
+    if (prev && !canEdit) {
+      saveTableForCurrentWeek();
     }
-  }, [canEdit, table]);
+  }, [canEdit]);
+
+  // Autosave während Bearbeitung (debounced)
+  useEffect(() => {
+    if (!canEdit) return;
+    if (suppressSaveRef.current) return;
+    const t = setTimeout(() => {
+      saveTableForCurrentWeek();
+    }, 800);
+    return () => clearTimeout(t);
+  }, [table, canEdit]);
+
+  // Realtime-Sync: Änderungen der aktuellen Woche live übernehmen
+  useEffect(() => {
+    // Vorherige Subscription aufräumen
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    const ch = supabase
+      .channel(`tagesplan:${weekId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tagesplan', filter: `id=eq.${weekId}` },
+        (payload: any) => {
+          const next = payload?.new?.inhalt;
+          if (next) {
+            // verhindert Autosave-Schleifen
+            suppressSaveRef.current = true;
+            setTable(next);
+            setTimeout(() => { suppressSaveRef.current = false; }, 0);
+          }
+        }
+      )
+      .subscribe();
+    channelRef.current = ch;
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [weekId]);
 
   return (
     <>
