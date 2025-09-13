@@ -432,14 +432,14 @@ const styles = StyleSheet.create({
     alignSelf: "center"
   },
   passwordInputCentered: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 6,
-    marginHorizontal: 8,
-    minWidth: 100,
-    backgroundColor: "#fff",
-    textAlign: "center",
-    alignSelf: "center"
+  borderWidth: 1,
+  borderColor: "#ccc",
+  padding: 6,
+  marginHorizontal: 8,
+  minWidth: 50,
+  backgroundColor: "#fff",
+  textAlign: "center",
+  alignSelf: "center"
   },
   tableWrapperCentered: {
     width: "100%",
