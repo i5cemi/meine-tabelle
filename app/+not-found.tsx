@@ -29,4 +29,7 @@ const styles = StyleSheet.create({
     marginTop: 15,
     paddingVertical: 15,
   },
+  shadow: {
+    boxShadow: '0px 2px 4px rgba(0,0,0,0.2)',
+  },
 });
