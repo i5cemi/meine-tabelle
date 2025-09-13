@@ -412,12 +412,15 @@ export default function EditTableScreen() {
           <View style={styles.passwordBoxCentered}>
             <Text>Passwort:</Text>
             <TextInput
-              style={styles.passwordInputCentered}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoFocus
-              onSubmitEditing={handlePasswordSubmit}
+                style={styles.passwordInputCentered}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoFocus
+                onSubmitEditing={handlePasswordSubmit}
+                onKeyPress={e => {
+                  if (e.nativeEvent.key === 'Enter') handlePasswordSubmit();
+                }}
             />
             <Button title="OK" onPress={handlePasswordSubmit} />
           </View>
