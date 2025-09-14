@@ -58,7 +58,7 @@ const firstColumnEntries = [
   "ITS Regeldienst",
   "ITS Bereitschaft",
   "IMC",
-  "Anästh. Bereitschaft",
+  "Anäst. Bereitschaft",
   "Anäst. Hintergrund",
   "18 Uhr Dienst",
   "Anästh. Spätdienst"
@@ -420,64 +420,166 @@ export default function EditTableScreen() {
   // Funktion zum Drucken der Tabelle
   const printTable = async () => {
     const html = `
-      <html>
-          </style>
+      <!DOCTYPE html>
+      <html lang="de">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="color-scheme" content="light only" />
           <style>
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #333; padding: 4px; text-align: center; }
-            th { background: #e0e0e0; }
-            td:first-child, th:first-child { background: #f0f0f0; font-weight: bold; }
-            .katheter-row td { padding: 2px; font-size: 12px; }
-              <th>Montag</th>
-              <th>Dienstag</th>
-              <th>Mittwoch</th>
-              <th>Donnerstag</th>
-              <th>Freitag</th>
-              ${Array.from({length: KATHETER_ROW_COLS - NUM_COLS}).map((_, i) => `<th>${['Mo','Di','Mi','Do','Fr'][i % 5] || 'X'}</th>`).join('')}
+            @page { size: auto; margin: 12mm; }
+            html, body { background: #ffffff; }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              color: #000000;
+              margin: 0;
+              padding: 0 12mm;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            h1 {
+              text-align: center;
+              font-size: 18px;
+              margin: 8px 0 6px;
+              color: #000;
+            }
+            h2 {
+              text-align: center;
+              font-size: 14px;
+              margin: 0 0 12px;
+              font-weight: normal;
+              color: #000;
+            }
+            table {
+              border-collapse: collapse;
+              width: 100%;
+              font-size: 11px;
+              margin: 0 auto;
+              table-layout: fixed;
+            }
+            th, td {
+              border: 1px solid #333;
+              padding: 4px;
+              text-align: center;
+              vertical-align: middle;
+              color: #000;
+            }
+            th {
+              background: #e0e0e0;
+              font-weight: bold;
+            }
+            td:first-child, th:first-child {
+              background: #f0f0f0;
+              font-weight: bold;
+              text-align: left;
+              width: 150px;
+              max-width: 150px;
+            }
+            /* Katheter row: 2 side-by-side entries per day cell (5 day cells x 2 = 10) */
+            .katheter-pair-td { padding: 4px; background: #ffffff; }
+            .katheter-pair { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            .katheter-pair td {
+              width: 50%;
+              background: #ffffff;
+              font-weight: normal;
+              text-align: center;
+              font-size: 11px;
+              padding: 0; /* outer cell provides standard padding so row height matches others */
+              line-height: 1.2;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              vertical-align: middle;
+              border: none; /* Remove all borders from inner Katheter cells */
+            }
+            .notarzt-row .grayed-out {
+              background-color: #f0f0f0;
+              color: #888;
+              text-decoration: line-through;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Tagesplan Anästhesie und Intensivstation SLF</h1>
+          <h2>KW ${currentWeek}, ${dateString}</h2>
           <table>
-            ${table.map((row, rowIdx) => {
-              const cellsHtml = row.map(cell => `<td>${cell}</td>`).join('');
-              // pad to maximum columns (10) so the table stays rectangular for printing
-              const padCount = Math.max(0, KATHETER_ROW_COLS - row.length);
-              const padHtml = Array.from({length: padCount}).map(() => '<td></td>').join('');
-              return `
-                <tr>
-                  <td>${firstColumnEntries[rowIdx] || ""}</td>
-                  ${cellsHtml}${padHtml}
-                </tr>
-              `;
-            }).join('')}
-              <th>Freitag</th>
-              <th class="extra-header">Mo</th>
-              <th class="extra-header">Di</th>
-              <th class="extra-header">Mi</th>
-              <th class="extra-header">Do</th>
-              <th class="extra-header">Fr</th>
-            </tr>
-            ${table.map((row, rowIdx) => {
-              const isKatheterRow = rowIdx === 15;
-              if (isKatheterRow) {
+            <colgroup>
+              <col class="col-first" style="width:150px" />
+              <col class="col-day" span="5" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Dienst</th>
+                <th>Montag</th>
+                <th>Dienstag</th>
+                <th>Mittwoch</th>
+                <th>Donnerstag</th>
+                <th>Freitag</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${table.map((row, rowIdx) => {
+                const isKatheterRow = rowIdx === KATHETER_ROW_INDEX;
+                const isNotarztRow = rowIdx === NOTARZT_ROW_INDEX;
+                let cellsHtml = '';
+                
+                if (isKatheterRow) {
+                  // Group 10 entries into 5 day cells, each with 2 stacked rows
+                  const padded = [...row];
+                  const padCount = KATHETER_ROW_COLS - padded.length;
+                  for (let i = 0; i < padCount; i++) padded.push('');
+                  const dayCells = Array.from({ length: NUM_COLS }, (_, d) => {
+                    const left = padded[2 * d] || '';
+                    const right = padded[2 * d + 1] || '';
+                    return `<td class="katheter-pair-td"><table class="katheter-pair"><tr><td>${left}</td><td>${right}</td></tr></table></td>`;
+                  }).join('');
+                  cellsHtml = dayCells;
+                } else {
+                  cellsHtml = row.map((cell, colIdx) => {
+                    const isGrayedOut = isNotarztRow && [0, 1, 3, 4].includes(colIdx);
+                    return `<td class="${isGrayedOut ? 'grayed-out' : ''}">${cell || ''}</td>`;
+                  }).join('');
+                  // Pad standard rows to exactly the 5 day columns if shorter
+                  const padCount = NUM_COLS - row.length;
+                  if (padCount > 0) {
+                    cellsHtml += '<td></td>'.repeat(padCount);
+                  }
+                }
+
                 return `
-                  <tr class="katheter-row">
+                  <tr class="${isKatheterRow ? 'katheter-row' : ''} ${isNotarztRow ? 'notarzt-row' : ''}">
                     <td>${firstColumnEntries[rowIdx] || ""}</td>
-                    ${row.map(cell => `<td>${cell}</td>`).join('')}
-                    ${row.map(cell => `<td>${cell}</td>`).join('')}
+                    ${cellsHtml}
                   </tr>
                 `;
-              } else {
-                return `
-                  <tr>
-                    <td>${firstColumnEntries[rowIdx] || ""}</td>
-                    ${row.map(cell => `<td>${cell}</td>`).join('')}
-                    <td colspan="5"></td>
-                  </tr>
-                `;
-              }
-            }).join('')}
+              }).join('')}
+            </tbody>
           </table>
         </body>
       </html>
     `;
+    // On web, open a new window and trigger native printing for consistent output
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+        // Ensure styles render before printing
+        win.focus();
+        // Some browsers need a short delay for layout
+        setTimeout(() => {
+          try {
+            win.print();
+          } catch (e) {
+            // ignore
+          }
+          // Close the window after printing (best effort)
+          try { win.close(); } catch {}
+        }, 150);
+        return;
+      }
+    }
+    // Fallback to expo-print (native/mobile or if popup blocked)
     await Print.printAsync({ html });
   };
 
@@ -584,7 +686,7 @@ export default function EditTableScreen() {
           <Text style={styles.headerCentered}>
             Tagesplan Anästhesie und Intensivstation SLF
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+          <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
             <View style={{ marginRight: 8 }}>
               <Button title="<" onPress={async () => {
                 await saveTableForCurrentWeek();
@@ -602,74 +704,74 @@ export default function EditTableScreen() {
             </View>
           </View>
         </View>
-      <View style={styles.buttonRowCentered}>
-        <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
-          <Button title="Drucken" onPress={printTable} />
-          <View style={{ width: 16 }} />
-          <View style={[styles.passwordBoxCentered, { alignItems: "center" }]}>
-            <Text>Passwort:</Text>
-            <TextInput
-                style={styles.passwordInputCentered}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoFocus
-                autoComplete="off"
-                autoCorrect={false}
-                autoCapitalize="none"
-                textContentType="none"
-                passwordRules=""
-                onSubmitEditing={handlePasswordSubmit}
-                onKeyPress={e => {
-                  if (e.nativeEvent.key === 'Enter') handlePasswordSubmit();
-                }}
-            />
-            <Button title="OK" onPress={handlePasswordSubmit} />
-          </View>
-          <View style={{ width: 16 }} />
-          <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
-        </View>
-      </View>
-      <View style={styles.tableWrapperCentered}>
-        <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
-          <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center', minWidth: 700 }}>
-            <View style={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
-              {/* Tabellenkopf */}
-              <View style={[styles.row, { justifyContent: 'center', alignItems: 'center' }] }>
-                <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
-                {/* Standard 5 Spalten */}
-                { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
-                  <Text
-                    key={colIdx}
-                    style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: 'center' }]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {day}
-                  </Text>
-                ))}
-              </View>
-              {/* Tabelleninhalt mit vertikalem Slider */}
-              <ScrollView style={{ maxHeight: screenHeight - 250, width: 700, alignSelf: 'center' }} contentContainerStyle={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
-                {renderTable()}
-              </ScrollView>
+        <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={styles.buttonRowCentered}>
+          <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
+            <Button title="Drucken" onPress={printTable} />
+            <View style={{ width: 16 }} />
+            <View style={[styles.passwordBoxCentered, { alignItems: "center" }]}>
+              <Text>Passwort:</Text>
+              <TextInput
+                  style={styles.passwordInputCentered}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  autoFocus
+                  autoComplete="off"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  textContentType="none"
+                  passwordRules=""
+                  onSubmitEditing={handlePasswordSubmit}
+                  onKeyPress={e => {
+                    if (e.nativeEvent.key === 'Enter') handlePasswordSubmit();
+                  }}
+              />
+              <Button title="OK" onPress={handlePasswordSubmit} />
             </View>
-          </ScrollView>
-        </View>
-      </View>
-      <View style={[styles.countdownBoxCentered, { flexDirection: "row", justifyContent: "space-between", width: 700 }]}>
-        {canEdit ? (
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={styles.countdownTextCentered}>Bearbeitungszeit: {countdown} Sekunden</Text>
+            <View style={{ width: 16 }} />
+            <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
           </View>
-        ) : (
-          <>
-            <Text style={[styles.countdownTextCentered, { textAlign: "left" }]}>Fehlermeldung unter 3630 - M. Cercasov</Text>
-            <Text style={[styles.countdownTextCentered, { textAlign: "right" }]}>Bearbeitung gesperrt - bitte erneut einloggen.</Text>
-          </>
-        )}
-      </View>
-    </SafeAreaView>
+        </View>
+        <View style={styles.tableWrapperCentered}>
+          <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+            <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center', minWidth: 700 }}>
+              <View style={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
+                {/* Tabellenkopf */}
+                <View style={[styles.row, { justifyContent: 'center', alignItems: 'center' }] }>
+                  <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
+                  {/* Standard 5 Spalten */}
+                  { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
+                    <Text
+                      key={colIdx}
+                      style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: 'center' }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {day}
+                    </Text>
+                  ))}
+                </View>
+                {/* Tabelleninhalt mit vertikalem Slider */}
+                <ScrollView style={{ maxHeight: screenHeight - 250, width: 700, alignSelf: 'center' }} contentContainerStyle={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
+                  {renderTable()}
+                </ScrollView>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+  <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={[styles.countdownBoxCentered, { flexDirection: "row", justifyContent: "space-between", width: 700 }]}>
+          {canEdit ? (
+            <View style={{ flex: 1, alignItems: "center" }}>
+              <Text style={styles.countdownTextCentered}>Bearbeitungszeit: {countdown} Sekunden</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.countdownTextCentered, { textAlign: "left" }]}>Fehlermeldung unter 3630 - M. Cercasov</Text>
+              <Text style={[styles.countdownTextCentered, { textAlign: "right" }]}>Bearbeitung gesperrt - bitte erneut einloggen.</Text>
+            </>
+          )}
+        </View>
+      </SafeAreaView>
     </>
   );
 }
@@ -754,6 +856,9 @@ const styles = StyleSheet.create({
     color: "#333",
     textAlign: "center",
     alignSelf: "center"
+  },
+  noPrint: {
+    display: 'none',
   },
   grayedOutCell: {
     backgroundColor: "#f0f0f0",
