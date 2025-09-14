@@ -4,8 +4,38 @@ import { Stack } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
-const NUM_ROWS = 23;
+const NUM_ROWS = 24;
 const NUM_COLS = 5;
+const KATHETER_ROW_INDEX = 15;
+const NOTARZT_ROW_INDEX = 14; // Notarzt row index
+const KATHETER_ROW_COLS = 10;
+
+// Helper: column count per row
+function getColumnCount(rowIdx: number): number {
+  return rowIdx === KATHETER_ROW_INDEX ? KATHETER_ROW_COLS : NUM_COLS;
+}
+
+// Helper: create empty table with variable column counts
+function createEmptyTable(): string[][] {
+  return Array.from({ length: NUM_ROWS }, (_, r) => Array(getColumnCount(r)).fill(""));
+}
+
+// Helper: normalize arbitrary raw data into our shape (length NUM_ROWS and per-row column counts)
+function normalizeTableData(raw: unknown): string[][] {
+  const result: string[][] = [];
+  const asArr = Array.isArray(raw) ? raw : [];
+  for (let r = 0; r < NUM_ROWS; r++) {
+    const targetCols = getColumnCount(r);
+    const row = Array.isArray(asArr[r]) ? asArr[r] : [];
+    const normalized: string[] = [];
+    for (let c = 0; c < targetCols; c++) {
+      const val = row[c];
+      normalized.push(typeof val === 'string' ? val : '');
+    }
+    result.push(normalized);
+  }
+  return result;
+}
 
 const firstColumnEntries = [
   "OP-Oberarzt",
@@ -28,10 +58,10 @@ const firstColumnEntries = [
   "ITS Regeldienst",
   "ITS Bereitschaft",
   "IMC",
-  "Anästhesie Bereitschaft",
-  "Anästhesie Hintergrund",
+  "Anästh. Bereitschaft",
+  "Anäst. Hintergrund",
   "18 Uhr Dienst",
-  "Anästhesie Spätdienst"
+  "Anästh. Spätdienst"
 ];
 
 const supabase = createClient('https://ykvrubvoohhoqbsyzdva.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrdnJ1YnZvb2hob3Fic3l6ZHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2OTE3MjcsImV4cCI6MjA3MzI2NzcyN30.q4Pp7L-HP2g-tPuhcjuKRaJhnRvgMnbu7KpcArqGfuw');
@@ -68,8 +98,12 @@ export default function EditTableScreen() {
       .select('inhalt')
       .eq('id', id)
       .single();
-    if (data && data.inhalt) setTable(data.inhalt);
-    else setTable(Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill('')));
+    if (data && data.inhalt) {
+      const normalized = normalizeTableData(data.inhalt);
+      setTable(normalized);
+    } else {
+      setTable(createEmptyTable());
+    }
     if (error) console.log('Supabase Ladefehler:', error);
   }
   // Hilfsfunktionen für KW und Datum
@@ -112,53 +146,183 @@ export default function EditTableScreen() {
   const { height: screenHeight } = useWindowDimensions();
   // Tabelleninhalt als eigene Funktion
   function renderTable() {
-    return table.map((row, rowIdx) => (
-      <View key={rowIdx} style={[styles.row, { justifyContent: "center", alignItems: "center" }]}> 
-        {/* Erste Spalte: nicht editierbar */}
-        <Text style={[styles.cell, styles.firstColCell]}>
-          {firstColumnEntries[rowIdx] || ""}
-        </Text>
-        {/* Editierbare Zellen */}
-        {row.map((cell, colIdx) => (
-          <TextInput
-            key={colIdx}
-            style={[styles.cell, !canEdit && styles.disabledCell]}
-            value={cell}
-            editable={canEdit}
-            onChangeText={(value) => handleCellChange(rowIdx, colIdx, value)}
-            onEndEditing={() => handleCellValidate(rowIdx, colIdx)}
-            onBlur={() => handleCellValidate(rowIdx, colIdx)}
-            onKeyPress={({ nativeEvent }) => {
-              if (nativeEvent.key === 'Tab') {
-                handleCellValidate(rowIdx, colIdx);
-              }
-            }}
-            onSubmitEditing={() => {
-              handleCellValidate(rowIdx, colIdx);
-              // Springe in die nächste Zelle
-              if (canEdit) {
-                const nextCol = colIdx + 1;
-                const nextRow = rowIdx + (nextCol >= NUM_COLS ? 1 : 0);
-                const nextColIdx = nextCol % NUM_COLS;
-                if (nextRow < NUM_ROWS) {
-                  const nextInputRef = inputRefs[nextRow]?.[nextColIdx];
-                  nextInputRef?.focus();
-                }
-              }
-            }}
-            ref={ref => {
-              if (!inputRefs[rowIdx]) inputRefs[rowIdx] = [];
-              inputRefs[rowIdx][colIdx] = ref;
-            }}
-            blurOnSubmit={false}
-          />
-        ))}
-      </View>
-    ));
+    return table.map((row, rowIdx) => {
+      const isKatheterRow = rowIdx === KATHETER_ROW_INDEX;
+      const isNotarztRow = rowIdx === NOTARZT_ROW_INDEX; // Define Notarzt row index
+      const cellsToRender = getColumnCount(rowIdx);
+
+      return (
+        <View key={rowIdx} style={[styles.row, { justifyContent: "center", alignItems: "center" }]}> 
+          {/* Erste Spalte: nicht editierbar */}
+          <Text style={[styles.cell, styles.firstColCell]}>
+            {firstColumnEntries[rowIdx] || ""}
+          </Text>
+          {/* Editierbare Zellen */}
+          {Array.from({ length: cellsToRender }, (_, colIdx) => {
+            const cellValue = row[colIdx] || '';
+            const isGrayedOut = isNotarztRow && [0, 1, 3, 4].includes(colIdx); // Gray out specific cells
+
+            return (
+              <View key={colIdx} style={{ position: 'relative' }}>
+                <TextInput
+                  style={[
+                    styles.cell, 
+                    !canEdit && styles.disabledCell,
+                    isKatheterRow && { minWidth: 55, maxWidth: 55 }, // Smaller cells for Katheter row
+                    isGrayedOut && styles.grayedOutCell // Apply gray-out style
+                  ]}
+                  value={cellValue}
+                  editable={canEdit && !isGrayedOut} // Disable editing for grayed-out cells
+                  selectTextOnFocus={true}
+                  onChangeText={(value) => handleCellChange(rowIdx, colIdx, value)}
+                  onEndEditing={() => {
+                    handleCellValidate(rowIdx, colIdx);
+                  }}
+                  onBlur={() => handleCellValidate(rowIdx, colIdx)}
+                  onSubmitEditing={() => {
+                    handleCellValidate(rowIdx, colIdx);
+                    // Spezielle Navigation für bestimmte Zeilen
+                    if (canEdit) {
+                      // Spezielle Navigation für "Anästhesie Sprechstunde" (Index 13)
+                      if (rowIdx === 13) {
+                        // Für Montag (colIdx 0): springe zum ersten Katheter-Feld
+                        if (colIdx === 0) {
+                          const nextInputRef = inputRefs[15]?.[0]; // Erstes Katheter-Feld (Montag)
+                          nextInputRef?.focus();
+                        }
+                        // Für Dienstag (colIdx 1): springe zum dritten Katheter-Feld
+                        else if (colIdx === 1) {
+                          const nextInputRef = inputRefs[15]?.[2]; // Drittes Katheter-Feld (Mittwoch)
+                          nextInputRef?.focus();
+                        }
+                        // Für Mittwoch (colIdx 2): springe zum Notarzt-Feld
+                        else if (colIdx === 2) {
+                          const nextInputRef = inputRefs[14]?.[2]; // Notarzt Mittwoch
+                          nextInputRef?.focus();
+                        }
+                        // Für Donnerstag (colIdx 3): springe zum siebten Katheter-Feld
+                        else if (colIdx === 3) {
+                          const nextInputRef = inputRefs[15]?.[6]; // Siebtes Katheter-Feld (Index 6)
+                          nextInputRef?.focus();
+                        }
+                        // Für Freitag (colIdx 4): springe zum neunten Katheter-Feld
+                        else if (colIdx === 4) {
+                          const nextInputRef = inputRefs[15]?.[8]; // Neuntes Katheter-Feld (Index 8)
+                          nextInputRef?.focus();
+                        }
+                        // Für andere Tage: springe zum entsprechenden Katheter-Feld
+                        else {
+                          const nextInputRef = inputRefs[15]?.[colIdx]; // Entsprechendes Katheter-Feld
+                          nextInputRef?.focus();
+                        }
+                      }
+                      // Navigation von Notarzt (Index 14) zu Katheter u. Sprechstunde (Index 15)
+                      else if (rowIdx === 14) {
+                        // Für Mittwoch (colIdx 2): springe zum fünften Katheter-Feld
+                        if (colIdx === 2) {
+                          const nextInputRef = inputRefs[15]?.[4]; // Fünftes Katheter-Feld (Index 4)
+                          nextInputRef?.focus();
+                        }
+                        // Für alle anderen Tage: standard Navigation zu entsprechendem Katheter-Feld
+                        else {
+                          const nextInputRef = inputRefs[15]?.[colIdx];
+                          nextInputRef?.focus();
+                        }
+                      }
+                      // Spezielle Navigation für Katheter u. Sprechstunde (Index 15)
+                      else if (rowIdx === 15) {
+                        // Für Montag (colIdx 0): vom ersten Katheter-Feld zum zweiten
+                        if (colIdx === 0) {
+                          const nextInputRef = inputRefs[15]?.[1]; // Zweites Katheter-Feld (Dienstag)
+                          nextInputRef?.focus();
+                        }
+                        // Für Dienstag (colIdx 1): vom zweiten Katheter-Feld zu ITS OA Montag
+                        else if (colIdx === 1) {
+                          const nextInputRef = inputRefs[16]?.[0]; // ITS OA Montag
+                          nextInputRef?.focus();
+                        }
+                        // Für Mittwoch (colIdx 2): vom dritten Katheter-Feld zum vierten
+                        else if (colIdx === 2) {
+                          const nextInputRef = inputRefs[15]?.[3]; // Viertes Katheter-Feld (Donnerstag)
+                          nextInputRef?.focus();
+                        }
+                        // Für Donnerstag (colIdx 3): vom vierten Katheter-Feld zu ITS OA Dienstag
+                        else if (colIdx === 3) {
+                          const nextInputRef = inputRefs[16]?.[1]; // ITS OA Dienstag
+                          nextInputRef?.focus();
+                        }
+                        // Für Freitag (colIdx 4): vom fünften Katheter-Feld zu ITS OA entsprechend
+                        else if (colIdx === 4) {
+                          const nextInputRef = inputRefs[15]?.[5]; // Sechstes Katheter-Feld (Index 5)
+                          nextInputRef?.focus();
+                        }
+                        // Für Katheter-Feld 6 (colIdx 5): vom sechsten Katheter-Feld zu ITS OA Mittwoch
+                        else if (colIdx === 5) {
+                          const nextInputRef = inputRefs[16]?.[2]; // ITS OA Mittwoch
+                          nextInputRef?.focus();
+                        }
+                        // Für Katheter-Feld 7 (colIdx 6): vom siebten zum achten Katheter-Feld
+                        else if (colIdx === 6) {
+                          const nextInputRef = inputRefs[15]?.[7]; // Achtes Katheter-Feld (Index 7)
+                          nextInputRef?.focus();
+                        }
+                        // Für Katheter-Feld 8 (colIdx 7): vom achten Katheter-Feld zu ITS OA Donnerstag
+                        else if (colIdx === 7) {
+                          const nextInputRef = inputRefs[16]?.[3]; // ITS OA Donnerstag
+                          nextInputRef?.focus();
+                        }
+                        // Für Katheter-Feld 9 (colIdx 8): vom neunten zum zehnten Katheter-Feld
+                        else if (colIdx === 8) {
+                          const nextInputRef = inputRefs[15]?.[9]; // Zehntes Katheter-Feld (Index 9)
+                          nextInputRef?.focus();
+                        }
+                        // Für Katheter-Feld 10 (colIdx 9): vom zehnten Katheter-Feld zu ITS OA Freitag
+                        else if (colIdx === 9) {
+                          const nextInputRef = inputRefs[16]?.[4]; // ITS OA Freitag
+                          nextInputRef?.focus();
+                        }
+                        // Für weitere Spalten (falls vorhanden): standard Navigation zu ITS OA
+                        else {
+                          const nextInputRef = inputRefs[16]?.[colIdx];
+                          nextInputRef?.focus();
+                        }
+                      }
+                      // Standard-Navigation für alle anderen Zeilen
+                      else {
+                        const nextRow = rowIdx + 1;
+                        if (nextRow < NUM_ROWS) {
+                          // Gehe zur nächsten Zelle nach unten in derselben Spalte
+                          const nextInputRef = inputRefs[nextRow]?.[colIdx];
+                          nextInputRef?.focus();
+                        } else {
+                          // Letzte Zelle der Spalte erreicht - gehe zur ersten Zeile der nächsten Spalte
+                          const maxCols = getColumnCount(0);
+                          const nextCol = colIdx + 1;
+                          if (nextCol < maxCols) {
+                            const nextInputRef = inputRefs[0]?.[nextCol];
+                            nextInputRef?.focus();
+                          } else {
+                            const nextInputRef = inputRefs[0]?.[0];
+                            nextInputRef?.focus();
+                          }
+                        }
+                      }
+                    }
+                  }}
+                  ref={ref => {
+                    if (!inputRefs[rowIdx]) inputRefs[rowIdx] = [];
+                    inputRefs[rowIdx][colIdx] = ref;
+                  }}
+                  blurOnSubmit={false}
+                />
+              </View>
+            );
+          })}
+        </View>
+      );
+    });
   }
-  const [table, setTable] = useState<string[][]>(
-    Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill(''))
-  );
+  const [table, setTable] = useState<string[][]>(createEmptyTable());
   const [showPassword, setShowPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [canEdit, setCanEdit] = useState(false);
@@ -200,20 +364,28 @@ export default function EditTableScreen() {
   }, [countdown, canEdit]);
 
   // Zellenwert ändern
-  const handleCellChange = (rowIdx: number, colIdx: number, value: string) => {
+  const handleCellChange = async (rowIdx: number, colIdx: number, value: string) => {
     if (!canEdit) return;
+    
     const newTable = table.map((row, r) =>
       row.map((cell, c) => (r === rowIdx && c === colIdx ? value : cell))
     );
     setTable(newTable);
-    setCountdown(15); // Countdown nach jedem Tastendruck neu starten
+    setCountdown(20); // Countdown nach jedem Tastendruck neu starten
   };
 
   // Fehler bei identischem Wert in Spalte
   const handleCellValidate = (rowIdx: number, colIdx: number) => {
     if (!canEdit) return;
-    const value = table[rowIdx][colIdx];
-    const columnValues = table.map((r, idx) => idx !== rowIdx ? r[colIdx] : null);
+    
+    // Überprüfung NUR für Saal 1 bis AWR / NFA / 1111 (Zeilen 1-12)
+    const checkRows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    if (!checkRows.includes(rowIdx)) return;
+    
+    // Schutz: falls Spalte in manchen Zeilen nicht existiert (variable Breite)
+    const value = table[rowIdx]?.[colIdx] ?? '';
+    // Vergleiche nur innerhalb der erlaubten Zeilen (Saal 1 .. AWR)
+    const columnValues = table.map((r, idx) => (idx !== rowIdx && checkRows.includes(idx)) ? (r[colIdx] ?? null) : null);
     if (value !== "" && columnValues.includes(value)) {
       const newTable = table.map((r, rIdx2) =>
         r.map((c, cIdx2) =>
@@ -242,38 +414,66 @@ export default function EditTableScreen() {
   // Tabelle löschen
   const clearTable = () => {
     if (!canEdit) return;
-    setTable(Array.from({ length: NUM_ROWS }, () => Array(NUM_COLS).fill('')));
+    setTable(createEmptyTable());
   };
 
   // Funktion zum Drucken der Tabelle
   const printTable = async () => {
     const html = `
       <html>
-        <head>
+          </style>
           <style>
             table { border-collapse: collapse; width: 100%; }
             th, td { border: 1px solid #333; padding: 4px; text-align: center; }
             th { background: #e0e0e0; }
             td:first-child, th:first-child { background: #f0f0f0; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <h2>Tagesplan Anästhesie und Intensivstation SLF</h2>
-          <table>
-            <tr>
-              <th>Dienst</th>
+            .katheter-row td { padding: 2px; font-size: 12px; }
               <th>Montag</th>
               <th>Dienstag</th>
               <th>Mittwoch</th>
               <th>Donnerstag</th>
               <th>Freitag</th>
+              ${Array.from({length: KATHETER_ROW_COLS - NUM_COLS}).map((_, i) => `<th>${['Mo','Di','Mi','Do','Fr'][i % 5] || 'X'}</th>`).join('')}
+          <table>
+            ${table.map((row, rowIdx) => {
+              const cellsHtml = row.map(cell => `<td>${cell}</td>`).join('');
+              // pad to maximum columns (10) so the table stays rectangular for printing
+              const padCount = Math.max(0, KATHETER_ROW_COLS - row.length);
+              const padHtml = Array.from({length: padCount}).map(() => '<td></td>').join('');
+              return `
+                <tr>
+                  <td>${firstColumnEntries[rowIdx] || ""}</td>
+                  ${cellsHtml}${padHtml}
+                </tr>
+              `;
+            }).join('')}
+              <th>Freitag</th>
+              <th class="extra-header">Mo</th>
+              <th class="extra-header">Di</th>
+              <th class="extra-header">Mi</th>
+              <th class="extra-header">Do</th>
+              <th class="extra-header">Fr</th>
             </tr>
-            ${table.map((row, rowIdx) => `
-              <tr>
-                <td>${firstColumnEntries[rowIdx] || ""}</td>
-                ${row.map(cell => `<td>${cell}</td>`).join('')}
-              </tr>
-            `).join('')}
+            ${table.map((row, rowIdx) => {
+              const isKatheterRow = rowIdx === 15;
+              if (isKatheterRow) {
+                return `
+                  <tr class="katheter-row">
+                    <td>${firstColumnEntries[rowIdx] || ""}</td>
+                    ${row.map(cell => `<td>${cell}</td>`).join('')}
+                    ${row.map(cell => `<td>${cell}</td>`).join('')}
+                  </tr>
+                `;
+              } else {
+                return `
+                  <tr>
+                    <td>${firstColumnEntries[rowIdx] || ""}</td>
+                    ${row.map(cell => `<td>${cell}</td>`).join('')}
+                    <td colspan="5"></td>
+                  </tr>
+                `;
+              }
+            }).join('')}
           </table>
         </body>
       </html>
@@ -320,7 +520,7 @@ export default function EditTableScreen() {
           if (next) {
             // verhindert Autosave-Schleifen
             suppressSaveRef.current = true;
-            setTable(next);
+            setTable(normalizeTableData(next));
             setTimeout(() => { suppressSaveRef.current = false; }, 1000);
           }
         }
@@ -362,10 +562,11 @@ export default function EditTableScreen() {
         const remote = data?.inhalt as string[][] | undefined;
         if (!remote) return;
 
+        const normalized = normalizeTableData(remote);
         const local = tableRef.current;
-        if (JSON.stringify(remote) !== JSON.stringify(local)) {
+        if (JSON.stringify(normalized) !== JSON.stringify(local)) {
           suppressSaveRef.current = true;
-          setTable(remote);
+          setTable(normalizeTableData(remote));
           setTimeout(() => { suppressSaveRef.current = false; }, 1000);
         }
       } catch (e) {
@@ -403,13 +604,9 @@ export default function EditTableScreen() {
         </View>
       <View style={styles.buttonRowCentered}>
         <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
-          <Button title="Löschen" onPress={clearTable} disabled={!canEdit} />
-          <View style={{ width: 16 }} />
           <Button title="Drucken" onPress={printTable} />
           <View style={{ width: 16 }} />
-          <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
-          <View style={{ width: 16 }} />
-          <View style={styles.passwordBoxCentered}>
+          <View style={[styles.passwordBoxCentered, { alignItems: "center" }]}>
             <Text>Passwort:</Text>
             <TextInput
                 style={styles.passwordInputCentered}
@@ -417,6 +614,11 @@ export default function EditTableScreen() {
                 onChangeText={setPassword}
                 secureTextEntry
                 autoFocus
+                autoComplete="off"
+                autoCorrect={false}
+                autoCapitalize="none"
+                textContentType="none"
+                passwordRules=""
                 onSubmitEditing={handlePasswordSubmit}
                 onKeyPress={e => {
                   if (e.nativeEvent.key === 'Enter') handlePasswordSubmit();
@@ -424,6 +626,8 @@ export default function EditTableScreen() {
             />
             <Button title="OK" onPress={handlePasswordSubmit} />
           </View>
+          <View style={{ width: 16 }} />
+          <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
         </View>
       </View>
       <View style={styles.tableWrapperCentered}>
@@ -433,6 +637,7 @@ export default function EditTableScreen() {
               {/* Tabellenkopf */}
               <View style={[styles.row, { justifyContent: 'center', alignItems: 'center' }] }>
                 <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
+                {/* Standard 5 Spalten */}
                 { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
                   <Text
                     key={colIdx}
@@ -452,11 +657,16 @@ export default function EditTableScreen() {
           </ScrollView>
         </View>
       </View>
-      <View style={styles.countdownBoxCentered}>
+      <View style={[styles.countdownBoxCentered, { flexDirection: "row", justifyContent: "space-between", width: 700 }]}>
         {canEdit ? (
-          <Text style={styles.countdownTextCentered}>Bearbeitungszeit: {countdown} Sekunden</Text>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text style={styles.countdownTextCentered}>Bearbeitungszeit: {countdown} Sekunden</Text>
+          </View>
         ) : (
-          <Text style={styles.countdownTextCentered}>Bearbeitung gesperrt. Bitte erneut einloggen.</Text>
+          <>
+            <Text style={[styles.countdownTextCentered, { textAlign: "left" }]}>Fehlermeldung unter 3630 - M. Cercasov</Text>
+            <Text style={[styles.countdownTextCentered, { textAlign: "right" }]}>Bearbeitung gesperrt - bitte erneut einloggen.</Text>
+          </>
         )}
       </View>
     </SafeAreaView>
@@ -514,7 +724,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
     gap: 8,
     alignSelf: "center"
   },
@@ -545,5 +754,10 @@ const styles = StyleSheet.create({
     color: "#333",
     textAlign: "center",
     alignSelf: "center"
+  },
+  grayedOutCell: {
+    backgroundColor: "#f0f0f0",
+    color: "#888",
+    textDecorationLine: "line-through",
   }
 });
