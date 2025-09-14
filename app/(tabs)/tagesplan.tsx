@@ -51,7 +51,7 @@ const firstColumnEntries = [
   "URES / TUR",
   "Herzkateter / Endo",
   "AWR / NFA / 1111",
-  "Anästhesie Sprechstunde",
+  "Anäst. Sprechstunde",
   "Notarzt",
   "Katheter u. Sprechstunde",
   "ITS OA / OÄ",
@@ -61,7 +61,7 @@ const firstColumnEntries = [
   "Anäst. Bereitschaft",
   "Anäst. Hintergrund",
   "18 Uhr Dienst",
-  "Anästh. Spätdienst"
+  "Anäst. Spätdienst"
 ];
 
 const supabase = createClient('https://ykvrubvoohhoqbsyzdva.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrdnJ1YnZvb2hob3Fic3l6ZHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2OTE3MjcsImV4cCI6MjA3MzI2NzcyN30.q4Pp7L-HP2g-tPuhcjuKRaJhnRvgMnbu7KpcArqGfuw');
