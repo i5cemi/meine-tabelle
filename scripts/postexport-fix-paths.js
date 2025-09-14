@@ -47,6 +47,45 @@ function ensureNoJekyll(dir) {
   }
 }
 
+function createSpaFallback(dir) {
+  const fallbackFile = path.join(dir, '404.html');
+  const fallbackContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Redirecting...</title>
+    <script>
+        // GitHub Pages SPA redirect hack
+        // This script takes the current URL and redirects to the index page with the path as a query parameter
+        // The index page will then use this to restore the correct route
+        
+        var pathSegmentsToKeep = 1; // Change this if you have a different base path depth
+        var l = window.location;
+        
+        // Remove the base path segments (e.g., /meine-tabelle/)
+        var pathSegments = l.pathname.split('/').slice(pathSegmentsToKeep);
+        
+        // Reconstruct the path and redirect to index.html with the path as query parameter
+        var redirectPath = '/' + pathSegments.join('/');
+        
+        l.replace(
+            l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+            l.pathname.split('/').slice(0, pathSegmentsToKeep + 1).join('/') +
+            '/?p=' + redirectPath +
+            (l.search ? '&q=' + l.search.slice(1) : '') +
+            l.hash
+        );
+    </script>
+</head>
+<body>
+    <p>Redirecting...</p>
+</body>
+</html>`;
+  
+  fs.writeFileSync(fallbackFile, fallbackContent, 'utf8');
+  console.log(`[postexport-fix-paths] Created ${fallbackFile}`);
+}
+
 function* walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
@@ -77,6 +116,7 @@ function run() {
     }
   }
   ensureNoJekyll(DOCS_DIR);
+  createSpaFallback(DOCS_DIR);
   console.log(`[postexport-fix-paths] Done. Rewritten HTML files: ${changedFiles}. BASE=${BASE}`);
 }
 
