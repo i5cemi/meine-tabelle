@@ -82,11 +82,16 @@ export default function EditTableScreen() {
   // Tabelleninhalt für aktuelle KW speichern
   async function saveTableForCurrentWeek() {
     const id = getSupabaseIdForWeek(monday);
+    const now = new Date();
     await supabase
       .from('tagesplan')
-      .upsert({ id, inhalt: table })
+      .upsert({ id, inhalt: table, updated_at: now.toISOString() })
       .then(({ error }) => {
-        if (error) console.log('Supabase Fehler beim Speichern:', error);
+        if (error) {
+          console.log('Supabase Fehler beim Speichern:', error);
+        } else {
+          setLastModified(now);
+        }
       });
   }
 
@@ -95,14 +100,22 @@ export default function EditTableScreen() {
     const id = getSupabaseIdForWeek(newMonday);
     const { data, error } = await supabase
       .from('tagesplan')
-      .select('inhalt')
+      .select('inhalt, updated_at')
       .eq('id', id)
       .single();
     if (data && data.inhalt) {
       const normalized = normalizeTableData(data.inhalt);
       setTable(normalized);
+      // Set timestamp from database if available
+      if (data.updated_at) {
+        setLastModified(new Date(data.updated_at));
+      } else {
+        setLastModified(null);
+      }
     } else {
       setTable(createEmptyTable());
+      // For empty tables, don't set any timestamp
+      setLastModified(null);
     }
     if (error) console.log('Supabase Ladefehler:', error);
   }
@@ -327,6 +340,7 @@ export default function EditTableScreen() {
   const [password, setPassword] = useState('');
   const [canEdit, setCanEdit] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [lastModified, setLastModified] = useState<Date | null>(null);
   const timerRef = useRef<number | null>(null);
   const suppressSaveRef = useRef(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -554,6 +568,11 @@ export default function EditTableScreen() {
               }).join('')}
             </tbody>
           </table>
+          ${lastModified ? `
+          <div style="text-align: center; margin-top: 16px; font-size: 14px; color: #666;">
+            Letzte Änderung: ${lastModified.toLocaleDateString('de-DE')} ${lastModified.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          ` : ''}
         </body>
       </html>
     `;
@@ -619,10 +638,15 @@ export default function EditTableScreen() {
         { event: '*', schema: 'public', table: 'tagesplan', filter: `id=eq.${weekId}` },
         (payload: any) => {
           const next = payload?.new?.inhalt;
+          const nextUpdatedAt = payload?.new?.updated_at;
           if (next) {
             // verhindert Autosave-Schleifen
             suppressSaveRef.current = true;
             setTable(normalizeTableData(next));
+            // Update lastModified from realtime data if available
+            if (nextUpdatedAt) {
+              setLastModified(new Date(nextUpdatedAt));
+            }
             setTimeout(() => { suppressSaveRef.current = false; }, 1000);
           }
         }
@@ -652,7 +676,7 @@ export default function EditTableScreen() {
         const id = getSupabaseIdForWeek(monday);
         const { data, error } = await supabase
           .from('tagesplan')
-          .select('inhalt')
+          .select('inhalt, updated_at')
           .eq('id', id)
           .single();
 
@@ -669,6 +693,10 @@ export default function EditTableScreen() {
         if (JSON.stringify(normalized) !== JSON.stringify(local)) {
           suppressSaveRef.current = true;
           setTable(normalizeTableData(remote));
+          // Update lastModified from polling data if available
+          if (data.updated_at) {
+            setLastModified(new Date(data.updated_at));
+          }
           setTimeout(() => { suppressSaveRef.current = false; }, 1000);
         }
       } catch (e) {
@@ -759,16 +787,26 @@ export default function EditTableScreen() {
             </ScrollView>
           </View>
         </View>
-  <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={[styles.countdownBoxCentered, { flexDirection: "row", justifyContent: "space-between", width: 700 }]}>
+  <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={[styles.countdownBoxCentered, { width: 700 }]}>
           {canEdit ? (
             <View style={{ flex: 1, alignItems: "center" }}>
               <Text style={styles.countdownTextCentered}>Bearbeitungszeit: {countdown} Sekunden</Text>
+              {/* Zeitstempel auch während Bearbeitung anzeigen */}
+              <Text style={[styles.countdownTextCentered, { textAlign: "center", fontSize: 12, color: "#666", marginTop: 8 }]}>
+                Letzte Änderung: {lastModified ? `${lastModified.toLocaleDateString('de-DE')} ${lastModified.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Noch nie gespeichert'}
+              </Text>
             </View>
           ) : (
-            <>
-              <Text style={[styles.countdownTextCentered, { textAlign: "left" }]}>Fehlermeldung unter 3630 - M. Cercasov</Text>
-              <Text style={[styles.countdownTextCentered, { textAlign: "right" }]}>Bearbeitung gesperrt - bitte erneut einloggen.</Text>
-            </>
+            <View style={{ alignItems: "center", width: "100%" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                <Text style={[styles.countdownTextCentered, { textAlign: "left", flex: 1 }]}>Fehlermeldung: M. Cercasov 3630</Text>
+                {/* Zeitstempel in der Mitte */}
+                <Text style={[styles.countdownTextCentered, { textAlign: "center", fontSize: 12, color: "#666", flex: 1 }]}>
+                  Letzte Änderung: {lastModified ? `${lastModified.toLocaleDateString('de-DE')} ${lastModified.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Noch nie gespeichert'}
+                </Text>
+                <Text style={[styles.countdownTextCentered, { textAlign: "right", flex: 1 }]}>zum Bearbeiten einloggen</Text>
+              </View>
+            </View>
           )}
         </View>
       </SafeAreaView>
