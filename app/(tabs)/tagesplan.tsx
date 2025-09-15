@@ -2,7 +2,7 @@ import { createClient, type RealtimeChannel } from '@supabase/supabase-js';
 import * as Print from 'expo-print';
 import { Stack } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Button, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 const NUM_ROWS = 24;
 const NUM_COLS = 5;
@@ -79,9 +79,18 @@ export default function EditTableScreen() {
     return year * 100 + week;
   }
 
-  // Tabelleninhalt für aktuelle KW speichern
+  // Tabelleninhalt für aktuelle KW speichern - nur bei echten Änderungen
   async function saveTableForCurrentWeek() {
     const id = getSupabaseIdForWeek(monday);
+    
+    // Vergleiche aktuelle Tabelle mit zuletzt gespeicherter Version
+    if (JSON.stringify(table) === JSON.stringify(lastSavedTableRef.current)) {
+      // Keine Änderung - nicht speichern und Zeitstempel nicht aktualisieren
+      console.log('Keine Änderung erkannt - Speichern übersprungen');
+      return;
+    }
+    
+    // Echte Änderung gefunden - speichern mit neuem Zeitstempel
     const now = new Date();
     await supabase
       .from('tagesplan')
@@ -90,7 +99,10 @@ export default function EditTableScreen() {
         if (error) {
           console.log('Supabase Fehler beim Speichern:', error);
         } else {
+          // Aktualisiere die Referenz für zukünftige Vergleiche
+          lastSavedTableRef.current = JSON.parse(JSON.stringify(table));
           setLastModified(now);
+          console.log('Echte Änderung gespeichert:', now);
         }
       });
   }
@@ -106,6 +118,8 @@ export default function EditTableScreen() {
     if (data && data.inhalt) {
       const normalized = normalizeTableData(data.inhalt);
       setTable(normalized);
+      // Aktualisiere die Referenz für Vergleiche
+      lastSavedTableRef.current = JSON.parse(JSON.stringify(normalized));
       // Set timestamp from database if available
       if (data.updated_at) {
         setLastModified(new Date(data.updated_at));
@@ -113,7 +127,10 @@ export default function EditTableScreen() {
         setLastModified(null);
       }
     } else {
-      setTable(createEmptyTable());
+      const emptyTable = createEmptyTable();
+      setTable(emptyTable);
+      // Aktualisiere die Referenz für leere Tabelle
+      lastSavedTableRef.current = JSON.parse(JSON.stringify(emptyTable));
       // For empty tables, don't set any timestamp
       setLastModified(null);
     }
@@ -131,6 +148,70 @@ export default function EditTableScreen() {
   const currentYear = today.getFullYear();
   const initialOffset = 0; // Standardmäßig 0, wird im useEffect gesetzt
   const [weekOffset, setWeekOffset] = useState(initialOffset);
+  
+  // Gerätetyp-Erkennung
+  function getDeviceInfo() {
+    const { width, height } = useWindowDimensions();
+    
+    return {
+      // Platform-basierte Erkennung
+      isWeb: Platform.OS === 'web',
+      isIOS: Platform.OS === 'ios',
+      isAndroid: Platform.OS === 'android',
+      platform: Platform.OS,
+      
+      // Bildschirmgröße-basierte Erkennung
+      isMobile: width < 768, // Weniger als Tablet-Breite
+      isTablet: width >= 768 && width < 1024,
+      isDesktop: width >= 1024,
+      
+      // Orientierung
+      isPortrait: height > width,
+      isLandscape: width > height,
+      
+      // Spezifische Werte
+      screenWidth: width,
+      screenHeight: height,
+      
+      // Kombinierte Logik für mobile Geräte
+      isMobileDevice: Platform.OS === 'ios' || Platform.OS === 'android' || width < 768
+    };
+  }
+  
+  // Mobile Layout-Optimierung
+  function getMobileLayoutDimensions() {
+    const deviceInfo = getDeviceInfo();
+    const { width, height } = useWindowDimensions();
+    
+    if (deviceInfo.isMobileDevice) {
+      // Für mobile Geräte: Bildschirmbreite minus Padding verwenden
+      const totalWidth = width - 32; // 16px padding links + rechts
+      const firstColumnWidth = Math.floor(totalWidth * 0.25); // 25% für erste Spalte
+      const remainingWidth = totalWidth - firstColumnWidth;
+      const regularColumnWidth = Math.floor(remainingWidth / 5); // 5 Wochentage
+      
+      return {
+        tableWidth: totalWidth,
+        firstColumnWidth,
+        regularColumnWidth,
+        maxTableHeight: height - 200, // Weniger Höhe für Header/Footer
+        isMobile: true
+      };
+    }
+    
+    // Desktop/Standard Layout
+    return {
+      tableWidth: 700,
+      firstColumnWidth: 160,
+      regularColumnWidth: 110,
+      maxTableHeight: height - 250,
+      isMobile: false
+    };
+  }
+  
+  const deviceInfo = getDeviceInfo();
+  const layoutDimensions = getMobileLayoutDimensions();
+  
   // Hilfsfunktionen für KW und Datum
   function getWeekNumber(date: Date) {
     const target = new Date(date.valueOf());
@@ -167,7 +248,11 @@ export default function EditTableScreen() {
       return (
         <View key={rowIdx} style={[styles.row, { justifyContent: "center", alignItems: "center" }]}> 
           {/* Erste Spalte: nicht editierbar */}
-          <Text style={[styles.cell, styles.firstColCell]}>
+          <Text style={[styles.cell, styles.firstColCell, {
+            minWidth: layoutDimensions.firstColumnWidth,
+            maxWidth: layoutDimensions.firstColumnWidth,
+            fontSize: layoutDimensions.isMobile ? 10 : 14
+          }]}>
             {firstColumnEntries[rowIdx] || ""}
           </Text>
           {/* Editierbare Zellen */}
@@ -181,8 +266,14 @@ export default function EditTableScreen() {
                   style={[
                     styles.cell, 
                     !canEdit && styles.disabledCell,
-                    isKatheterRow && { minWidth: 55, maxWidth: 55 }, // Smaller cells for Katheter row
-                    isGrayedOut && styles.grayedOutCell // Apply gray-out style
+                    isKatheterRow && layoutDimensions.isMobile ? 
+                      { minWidth: Math.floor(layoutDimensions.regularColumnWidth * 0.8), maxWidth: Math.floor(layoutDimensions.regularColumnWidth * 0.8) } :
+                      isKatheterRow ? { minWidth: 55, maxWidth: 55 } : {
+                        minWidth: layoutDimensions.regularColumnWidth,
+                        maxWidth: layoutDimensions.regularColumnWidth
+                      },
+                    isGrayedOut && styles.grayedOutCell, // Apply gray-out style
+                    layoutDimensions.isMobile && { fontSize: 10, paddingHorizontal: 2, paddingVertical: 4 }
                   ]}
                   value={cellValue}
                   editable={canEdit && !isGrayedOut} // Disable editing for grayed-out cells
@@ -345,6 +436,7 @@ export default function EditTableScreen() {
   const suppressSaveRef = useRef(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const tableRef = useRef(table);
+  const lastSavedTableRef = useRef<string[][]>(createEmptyTable());
 
   // Daten beim Start laden
   useEffect(() => {
@@ -706,25 +798,38 @@ export default function EditTableScreen() {
     return () => clearInterval(interval);
   }, [monday, canEdit]);
 
+  // Debug: Geräteerkennung testen
+  const debugDeviceInfo = getDeviceInfo();
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={styles.fullContainerCentered}>
+      <SafeAreaView style={[styles.fullContainerCentered, layoutDimensions.isMobile && { paddingHorizontal: 0 }]}>
         <View style={{ alignItems: 'center', width: '100%' }}>
           <Text style={styles.headerCentered}>
             Tagesplan Anästhesie und Intensivstation SLF
           </Text>
-          <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-            <View style={{ marginRight: 8 }}>
+          {/* Debug-Anzeige für Geräteerkennung */}
+          <View style={{ backgroundColor: '#e8f4fd', padding: 8, margin: 8, borderRadius: 4, width: '90%' }}>
+            <Text style={{ fontSize: 12, textAlign: 'center', fontWeight: 'bold' }}>Geräte-Info (Debug):</Text>
+            <Text style={{ fontSize: 10, textAlign: 'center' }}>
+              Platform: {debugDeviceInfo.isWeb ? 'Web' : debugDeviceInfo.isIOS ? 'iOS' : debugDeviceInfo.isAndroid ? 'Android' : 'Unbekannt'} | 
+              Bildschirm: {debugDeviceInfo.screenWidth}x{debugDeviceInfo.screenHeight} | 
+              Typ: {debugDeviceInfo.isMobileDevice ? 'Mobil' : debugDeviceInfo.isTablet ? 'Tablet' : 'Desktop'} | 
+              Orientierung: {debugDeviceInfo.isPortrait ? 'Hochformat' : 'Querformat'}
+            </Text>
+          </View>
+          <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={{ flexDirection: layoutDimensions.isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, paddingHorizontal: layoutDimensions.isMobile ? 16 : 0 }}>
+            <View style={{ marginRight: layoutDimensions.isMobile ? 0 : 8, marginBottom: layoutDimensions.isMobile ? 8 : 0 }}>
               <Button title="<" onPress={async () => {
                 await saveTableForCurrentWeek();
                 setWeekOffset(weekOffset - 1);
               }} />
             </View>
-            <Text style={{ fontSize: 16, fontWeight: 'bold', textAlign: 'center', minWidth: 220 }}>
+            <Text style={{ fontSize: layoutDimensions.isMobile ? 14 : 16, fontWeight: 'bold', textAlign: 'center', minWidth: layoutDimensions.isMobile ? 'auto' : 220, marginBottom: layoutDimensions.isMobile ? 8 : 0 }}>
               KW {currentWeek}, {dateString}
             </Text>
-            <View style={{ marginLeft: 8 }}>
+            <View style={{ marginLeft: layoutDimensions.isMobile ? 0 : 8 }}>
               <Button title=">" onPress={async () => {
                 await saveTableForCurrentWeek();
                 setWeekOffset(weekOffset + 1);
@@ -732,14 +837,14 @@ export default function EditTableScreen() {
             </View>
           </View>
         </View>
-        <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={styles.buttonRowCentered}>
-          <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", width: "100%" }}>
+        <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={[styles.buttonRowCentered, { flexDirection: layoutDimensions.isMobile ? 'column' : 'row', paddingHorizontal: layoutDimensions.isMobile ? 16 : 0 }]}>
+          <View style={{ flexDirection: layoutDimensions.isMobile ? 'column' : 'row', justifyContent: "center", alignItems: "center", width: layoutDimensions.isMobile ? "100%" : "auto" }}>
             <Button title="Drucken" onPress={printTable} />
-            <View style={{ width: 16 }} />
-            <View style={[styles.passwordBoxCentered, { alignItems: "center" }]}>
-              <Text>Passwort:</Text>
+            <View style={{ width: layoutDimensions.isMobile ? 0 : 16, height: layoutDimensions.isMobile ? 12 : 0 }} />
+            <View style={[styles.passwordBoxCentered, { alignItems: "center", flexDirection: layoutDimensions.isMobile ? 'column' : 'row' }]}>
+              <Text style={{ marginBottom: layoutDimensions.isMobile ? 4 : 0 }}>Passwort:</Text>
               <TextInput
-                  style={styles.passwordInputCentered}
+                  style={[styles.passwordInputCentered, layoutDimensions.isMobile && { marginHorizontal: 0, marginVertical: 4, width: 120 }]}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -756,22 +861,39 @@ export default function EditTableScreen() {
               />
               <Button title="OK" onPress={handlePasswordSubmit} />
             </View>
-            <View style={{ width: 16 }} />
+            <View style={{ width: layoutDimensions.isMobile ? 0 : 16, height: layoutDimensions.isMobile ? 12 : 0 }} />
             <Button title="Logout" onPress={() => setCanEdit(false)} disabled={!canEdit} />
           </View>
         </View>
         <View style={styles.tableWrapperCentered}>
           <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
-            <ScrollView horizontal style={{ maxWidth: '100%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center', minWidth: 700 }}>
-              <View style={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
+            <ScrollView 
+              horizontal={!layoutDimensions.isMobile} 
+              style={{ maxWidth: '100%' }} 
+              contentContainerStyle={{ 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                minWidth: layoutDimensions.tableWidth 
+              }}
+              showsHorizontalScrollIndicator={false}
+            >
+              <View style={{ minWidth: layoutDimensions.tableWidth, alignItems: 'center', justifyContent: 'center' }}>
                 {/* Tabellenkopf */}
                 <View style={[styles.row, { justifyContent: 'center', alignItems: 'center' }] }>
-                  <Text style={[styles.cell, styles.headerCell, styles.firstColHeader]}>Dienst</Text>
+                  <Text style={[styles.cell, styles.headerCell, styles.firstColHeader, { 
+                    minWidth: layoutDimensions.firstColumnWidth, 
+                    maxWidth: layoutDimensions.firstColumnWidth 
+                  }]}>Dienst</Text>
                   {/* Standard 5 Spalten */}
                   { ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"].map((day, colIdx) => (
                     <Text
                       key={colIdx}
-                      style={[styles.cell, styles.headerCell, { minWidth: 110, maxWidth: 110, textAlign: 'center' }]}
+                      style={[styles.cell, styles.headerCell, { 
+                        minWidth: layoutDimensions.regularColumnWidth, 
+                        maxWidth: layoutDimensions.regularColumnWidth, 
+                        textAlign: 'center',
+                        fontSize: layoutDimensions.isMobile ? 12 : 14 
+                      }]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
@@ -780,31 +902,43 @@ export default function EditTableScreen() {
                   ))}
                 </View>
                 {/* Tabelleninhalt mit vertikalem Slider */}
-                <ScrollView style={{ maxHeight: screenHeight - 250, width: 700, alignSelf: 'center' }} contentContainerStyle={{ minWidth: 700, alignItems: 'center', justifyContent: 'center' }}>
+                <ScrollView 
+                  style={{ 
+                    maxHeight: layoutDimensions.maxTableHeight, 
+                    width: layoutDimensions.tableWidth, 
+                    alignSelf: 'center' 
+                  }} 
+                  contentContainerStyle={{ 
+                    minWidth: layoutDimensions.tableWidth, 
+                    alignItems: 'center', 
+                    justifyContent: 'center' 
+                  }}
+                  showsHorizontalScrollIndicator={false}
+                >
                   {renderTable()}
                 </ScrollView>
               </View>
             </ScrollView>
           </View>
         </View>
-  <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={[styles.countdownBoxCentered, { width: 700 }]}>
+  <View {...(typeof document !== 'undefined' ? ({ className: 'print-hide' } as any) : {})} style={[styles.countdownBoxCentered, { width: layoutDimensions.tableWidth }]}>
           {canEdit ? (
             <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={styles.countdownTextCentered}>Bearbeitungszeit: {countdown} Sekunden</Text>
+              <Text style={[styles.countdownTextCentered, layoutDimensions.isMobile && { fontSize: 12 }]}>Bearbeitungszeit: {countdown} Sekunden</Text>
               {/* Zeitstempel auch während Bearbeitung anzeigen */}
-              <Text style={[styles.countdownTextCentered, { textAlign: "center", fontSize: 12, color: "#666", marginTop: 8 }]}>
+              <Text style={[styles.countdownTextCentered, { textAlign: "center", fontSize: layoutDimensions.isMobile ? 10 : 12, color: "#666", marginTop: 8 }]}>
                 Letzte Änderung: {lastModified ? `${lastModified.toLocaleDateString('de-DE')} ${lastModified.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Noch nie gespeichert'}
               </Text>
             </View>
           ) : (
             <View style={{ alignItems: "center", width: "100%" }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                <Text style={[styles.countdownTextCentered, { textAlign: "left", flex: 1 }]}>Fehlermeldung: M. Cercasov 3630</Text>
+              <View style={{ flexDirection: layoutDimensions.isMobile ? "column" : "row", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                <Text style={[styles.countdownTextCentered, { textAlign: layoutDimensions.isMobile ? "center" : "left", flex: layoutDimensions.isMobile ? 0 : 1, fontSize: layoutDimensions.isMobile ? 10 : 14 }]}>Fehlermeldung: M. Cercasov 3630</Text>
                 {/* Zeitstempel in der Mitte */}
-                <Text style={[styles.countdownTextCentered, { textAlign: "center", fontSize: 12, color: "#666", flex: 1 }]}>
+                <Text style={[styles.countdownTextCentered, { textAlign: "center", fontSize: layoutDimensions.isMobile ? 9 : 12, color: "#666", flex: layoutDimensions.isMobile ? 0 : 1, marginVertical: layoutDimensions.isMobile ? 4 : 0 }]}>
                   Letzte Änderung: {lastModified ? `${lastModified.toLocaleDateString('de-DE')} ${lastModified.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Noch nie gespeichert'}
                 </Text>
-                <Text style={[styles.countdownTextCentered, { textAlign: "right", flex: 1 }]}>zum Bearbeiten einloggen</Text>
+                <Text style={[styles.countdownTextCentered, { textAlign: layoutDimensions.isMobile ? "center" : "right", flex: layoutDimensions.isMobile ? 0 : 1, fontSize: layoutDimensions.isMobile ? 10 : 14 }]}>zum Bearbeiten einloggen</Text>
               </View>
             </View>
           )}
