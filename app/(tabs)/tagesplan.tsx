@@ -477,7 +477,7 @@ export default function EditTableScreen() {
       row.map((cell, c) => (r === rowIdx && c === colIdx ? value : cell))
     );
     setTable(newTable);
-    setCountdown(20); // Countdown nach jedem Tastendruck neu starten
+    setCountdown(120); // Countdown nach jedem Tastendruck neu starten
   };
 
   // Fehler bei identischem Wert in Spalte
@@ -509,7 +509,7 @@ export default function EditTableScreen() {
   const handlePasswordSubmit = () => {
     if (password === "chef") {
       setCanEdit(true);
-      setCountdown(20); // Countdown startet nur nach Login
+      setCountdown(120); // Countdown startet nur nach Login
       setShowPassword(false);
       setPassword(""); // Passwortfeld leeren
     } else {
