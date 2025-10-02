@@ -259,6 +259,10 @@ export default function EditTableScreen() {
           {Array.from({ length: cellsToRender }, (_, colIdx) => {
             const cellValue = row[colIdx] || '';
             const isGrayedOut = isNotarztRow && [0, 1, 3, 4].includes(colIdx); // Gray out specific cells
+            const isOperatingRoomRow = rowIdx >= 0 && rowIdx <= 11; // OP-Oberarzt (row 0) + Saal 1 to URES / TUR (rows 1-10) + Herzkateter / Endo (row 11)
+            const isFirstRow = false; // No longer needed - OP-Oberarzt is now part of operating room rows
+            const isITSRow = rowIdx >= 16 && rowIdx <= 19; // ITS OA / OÄ to IMC (rows 16-19)
+            const isAnesthesiaRow = rowIdx >= 20; // All rows below IMC (anesthesia rows)
 
             return (
               <View key={colIdx} style={{ position: 'relative' }}>
@@ -273,6 +277,10 @@ export default function EditTableScreen() {
                         maxWidth: layoutDimensions.regularColumnWidth
                       },
                     isGrayedOut && styles.grayedOutCell, // Apply gray-out style
+                    isOperatingRoomRow && styles.operatingRoomCell, // Apply light green for operating rooms
+                    isFirstRow && styles.firstRowCell, // Apply light pink for first row
+                    isITSRow && styles.itsRowCell, // Apply light yellow for ITS rows
+                    isAnesthesiaRow && styles.anesthesiaRowCell, // Apply light pink for anesthesia rows
                     layoutDimensions.isMobile && { fontSize: 10, paddingHorizontal: 2, paddingVertical: 4 }
                   ]}
                   value={cellValue}
@@ -948,11 +956,12 @@ const styles = StyleSheet.create({
     maxWidth: 110,
     textAlign: "center",
     backgroundColor: "#fff",
-    flex: 1
+    flex: 1,
+    color: "#000000" // Black text color
   },
   disabledCell: {
     backgroundColor: "#eaeaea",
-    color: "#888"
+    color: "#000000" // Keep black text even when disabled
   },
   headerCell: {
     backgroundColor: "#e0e0e0",
@@ -1023,5 +1032,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0f0f0",
     color: "#888",
     textDecorationLine: "line-through",
+  },
+  operatingRoomCell: {
+    backgroundColor: "#e8f5e8", // Light green background for operating rooms
+  },
+  firstRowCell: {
+    backgroundColor: "#fce8e8", // Light pink background for first row (OP-Oberarzt)
+  },
+  itsRowCell: {
+    backgroundColor: "#fffacd", // Light yellow background for ITS rows
+  },
+  anesthesiaRowCell: {
+    backgroundColor: "#fce8e8", // Light pink background for anesthesia rows
   }
 });
