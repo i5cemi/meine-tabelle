@@ -4,27 +4,33 @@
     <meta charset="utf-8">
     <title>Redirecting...</title>
     <script>
-        // GitHub Pages SPA redirect hack
-        // This script takes the current URL and redirects to the index page with the path as a query parameter
-        // The index page will then use this to restore the correct route
-        
-        var l = window.location;
-        var basePath = '/meine-tabelle';
-        
-        // Get the path after the base path
-        var fullPath = l.pathname;
-        var redirectPath = fullPath.replace(basePath, '') || '/';
-        
-        // Redirect to index.html with the path as query parameter
-        l.replace(
+      // __SPA_FALLBACK__ GitHub Pages SPA redirect
+      (function(l){
+        try {
+          // Auto-detect base path depth (user.github.io/repo ... => keep 1 segment)
+          var parts = l.pathname.split('/').filter(Boolean);
+          var keep = parts.length > 0 ? 1 : 0; // project pages keep first segment
+          var base = '/' + (parts.slice(0, keep).join('/'));
+          if (base === '/') base = '';
+
+          var fullPath = l.pathname;
+          var redirectPath = fullPath.slice(base.length) || '/';
+          l.replace(
             l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-            basePath + '/?p=' + encodeURIComponent(redirectPath) +
+            base + '/?p=' + encodeURIComponent(redirectPath) +
             (l.search ? '&q=' + encodeURIComponent(l.search.slice(1)) : '') +
             l.hash
-        );
+          );
+        } catch (e) {
+          console && console.warn && console.warn('SPA fallback error:', e);
+        }
+      })(window.location);
     </script>
-</head>
-<body>
+    <noscript>This site requires JavaScript to handle deep links on GitHub Pages.</noscript>
+    <meta http-equiv="refresh" content="0; url=./" />
+    <style>html,body{margin:0;padding:0;font-family:sans-serif}</style>
+  </head>
+  <body>
     <p>Redirecting...</p>
-</body>
-</html>
+  </body>
+  </html>

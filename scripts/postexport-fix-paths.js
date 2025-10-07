@@ -47,43 +47,71 @@ function ensureNoJekyll(dir) {
   }
 }
 
-function createSpaFallback(dir) {
+function createSpaFallbackIfMissing(dir) {
   const fallbackFile = path.join(dir, '404.html');
+  if (fs.existsSync(fallbackFile)) {
+    console.log(`[postexport-fix-paths] Skipped creating 404.html (already exists)`);
+    return;
+  }
   const fallbackContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <title>Redirecting...</title>
     <script>
-        // GitHub Pages SPA redirect hack
-        // This script takes the current URL and redirects to the index page with the path as a query parameter
-        // The index page will then use this to restore the correct route
-        
-        var pathSegmentsToKeep = 1; // Change this if you have a different base path depth
-        var l = window.location;
-        
-        // Remove the base path segments (e.g., /meine-tabelle/)
-        var pathSegments = l.pathname.split('/').slice(pathSegmentsToKeep);
-        
-        // Reconstruct the path and redirect to index.html with the path as query parameter
-        var redirectPath = '/' + pathSegments.join('/');
-        
-        l.replace(
+      // __SPA_FALLBACK__ GitHub Pages SPA redirect
+      (function(l){
+        try {
+          // Auto-detect base path depth (user.github.io/repo ... => keep 1 segment)
+          var parts = l.pathname.split('/').filter(Boolean);
+          var keep = parts.length > 0 ? 1 : 0; // project pages keep first segment
+          var base = '/' + (parts.slice(0, keep).join('/'));
+          if (base === '/') base = '';
+
+          var fullPath = l.pathname;
+          var redirectPath = fullPath.slice(base.length) || '/';
+          l.replace(
             l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-            l.pathname.split('/').slice(0, pathSegmentsToKeep + 1).join('/') +
-            '/?p=' + redirectPath +
-            (l.search ? '&q=' + l.search.slice(1) : '') +
+            base + '/?p=' + encodeURIComponent(redirectPath) +
+            (l.search ? '&q=' + encodeURIComponent(l.search.slice(1)) : '') +
             l.hash
-        );
+          );
+        } catch (e) {
+          console && console.warn && console.warn('SPA fallback error:', e);
+        }
+      })(window.location);
     </script>
-</head>
-<body>
+    <noscript>This site requires JavaScript to handle deep links on GitHub Pages.</noscript>
+    <meta http-equiv="refresh" content="0; url=./" />
+    <style>html,body{margin:0;padding:0;font-family:sans-serif}</style>
+  </head>
+  <body>
     <p>Redirecting...</p>
-</body>
-</html>`;
-  
+  </body>
+  </html>`;
   fs.writeFileSync(fallbackFile, fallbackContent, 'utf8');
   console.log(`[postexport-fix-paths] Created ${fallbackFile}`);
+}
+
+function injectSpaRestoreIntoIndex(dir) {
+  const indexFile = path.join(dir, 'index.html');
+  if (!fs.existsSync(indexFile)) return;
+  const input = fs.readFileSync(indexFile, 'utf8');
+  if (input.includes('__SPA_RESTORE__')) {
+    console.log('[postexport-fix-paths] SPA restore script already present in index.html');
+    return;
+  }
+  const restoreScript = `\n<script>\n// __SPA_RESTORE__ GitHub Pages SPA URL restore\n(function(l){\n  try {\n    if (!l.search) return;\n    var params = new URLSearchParams(l.search);\n    if (!params.has('p')) return;\n    var rawP = params.get('p') || '';\n    var p = decodeURIComponent(rawP.replace(/~and~/g, '&'));\n    var q = params.has('q') ? decodeURIComponent(params.get('q')) : '';\n    var parts = l.pathname.split('/').filter(Boolean);\n    var basePath = '/' + (parts[0] || '');\n    if (p && p.charAt(0) !== '/') p = '/' + p;\n    var newPath = basePath + p;\n    window.history.replaceState(null, null, newPath + (q ? ('?' + q) : '') + l.hash);\n  } catch (e) {\n    console && console.warn && console.warn('SPA restore error:', e);\n  }\n})(window.location);\n</script>\n`;
+  // Insert restore script near top of <head>
+  let output;
+  if (input.includes('<head>')) {
+    output = input.replace('<head>', '<head>' + restoreScript);
+  } else {
+    // Fallback: prepend
+    output = restoreScript + input;
+  }
+  fs.writeFileSync(indexFile, output, 'utf8');
+  console.log('[postexport-fix-paths] Injected SPA restore script into index.html');
 }
 
 function* walk(dir) {
@@ -116,7 +144,9 @@ function run() {
     }
   }
   ensureNoJekyll(DOCS_DIR);
-  createSpaFallback(DOCS_DIR);
+  // Ensure SPA behavior works on GitHub Pages
+  injectSpaRestoreIntoIndex(DOCS_DIR);
+  createSpaFallbackIfMissing(DOCS_DIR);
   console.log(`[postexport-fix-paths] Done. Rewritten HTML files: ${changedFiles}. BASE=${BASE}`);
 }
 
