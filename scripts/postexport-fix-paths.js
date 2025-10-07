@@ -114,6 +114,43 @@ function injectSpaRestoreIntoIndex(dir) {
   console.log('[postexport-fix-paths] Injected SPA restore script into index.html');
 }
 
+function injectBaseTag(dir, base) {
+  const indexFile = path.join(dir, 'index.html');
+  if (!fs.existsSync(indexFile)) return;
+  let html = fs.readFileSync(indexFile, 'utf8');
+  const baseTag = `<base href="${base}">`;
+  if (html.includes('<base ')) {
+    // Replace existing base tag
+    html = html.replace(/<base [^>]*>/i, baseTag);
+  } else if (html.includes('<head>')) {
+    html = html.replace('<head>', `<head>\n${baseTag}\n`);
+  }
+  fs.writeFileSync(indexFile, html, 'utf8');
+  console.log('[postexport-fix-paths] Ensured <base> tag in index.html:', base);
+}
+
+function injectBaseGuards(dir, base) {
+  const indexFile = path.join(dir, 'index.html');
+  if (!fs.existsSync(indexFile)) return;
+  let html = fs.readFileSync(indexFile, 'utf8');
+
+  const guardMarker = '__SPA_BASE_GUARD__';
+  const patchMarker = '__SPA_BASE_MONKEYPATCH__';
+  const hostCheck = String(/\.github\.io$/);
+  const guardScript = `\n<script>\n// ${guardMarker} Ensure URL stays under the project base on GitHub Pages\n(function(l){\n  try {\n    var BASE = '${base.replace(/\\/g, '')}';\n    if (!${hostCheck}.test(l.hostname)) return;\n    var path = l.pathname || '/';\n    if (path === BASE) {\n      window.history.replaceState(null, null, BASE + '/' + l.search + l.hash);\n      return;\n    }\n    if (path === '/' || !path.startsWith(BASE + '/')) {\n      var fixed = path === '/' ? (BASE + '/') : (BASE + (path.startsWith('/') ? '' : '/') + path);\n      window.history.replaceState(null, null, fixed + l.search + l.hash);\n    }\n  } catch (e) {\n    console && console.warn && console.warn('SPA base guard error:', e);\n  }\n})(window.location);\n</script>\n`;
+
+  const monkeyScript = `\n<script>\n// ${patchMarker} Enforce base path on history.pushState/replaceState\n(function(history, l){\n  try {\n    var BASE = '${base.replace(/\\/g, '')}';\n    if (!${hostCheck}.test(l.hostname)) return;\n    function normalize(url) {\n      try {\n        var a = new URL(url, l.origin);\n        var p = a.pathname || '/';\n        if (p === BASE) p = BASE + '/';\n        if (p === '/' || !p.startsWith(BASE + '/')) {\n          a.pathname = BASE + (p.startsWith('/') ? '' : '/') + p.replace(/^\\/+/, '');\n          return a.pathname + a.search + a.hash;\n        }\n        return url;\n      } catch (e) {\n        return url;\n      }\n    }\n    var _replace = history.replaceState;\n    var _push = history.pushState;\n    history.replaceState = function(state, title, url) {\n      var u = (typeof url === 'string') ? normalize(url) : url;\n      return _replace.call(this, state, title, u);\n    };\n    history.pushState = function(state, title, url) {\n      var u = (typeof url === 'string') ? normalize(url) : url;\n      return _push.call(this, state, title, u);\n    };\n  } catch (e) {\n    console && console.warn && console.warn('SPA base monkeypatch error:', e);\n  }\n})(window.history, window.location);\n</script>\n`;
+
+  if (!html.includes(guardMarker)) {
+    html = html.replace('<head>', '<head>' + guardScript);
+  }
+  if (!html.includes(patchMarker)) {
+    html = html.replace('<head>', '<head>' + monkeyScript);
+  }
+  fs.writeFileSync(indexFile, html, 'utf8');
+  console.log('[postexport-fix-paths] Ensured base guards in index.html');
+}
+
 function* walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
@@ -147,6 +184,8 @@ function run() {
   // Ensure SPA behavior works on GitHub Pages
   injectSpaRestoreIntoIndex(DOCS_DIR);
   createSpaFallbackIfMissing(DOCS_DIR);
+  injectBaseTag(DOCS_DIR, BASE);
+  injectBaseGuards(DOCS_DIR, BASE);
   console.log(`[postexport-fix-paths] Done. Rewritten HTML files: ${changedFiles}. BASE=${BASE}`);
 }
 

@@ -1,5 +1,64 @@
 <!DOCTYPE html><html  lang="en"><head>
 <script>
+// __SPA_BASE_MONKEYPATCH__ Enforce base path on history.pushState/replaceState
+(function(history, l){
+  try {
+    var BASE = '/meine-tabelle/';
+    if (!/\.github\.io$/.test(l.hostname)) return;
+    function normalize(url) {
+      try {
+        var a = new URL(url, l.origin);
+        var p = a.pathname || '/';
+        if (p === BASE) p = BASE + '/';
+        if (p === '/' || !p.startsWith(BASE + '/')) {
+          a.pathname = BASE + (p.startsWith('/') ? '' : '/') + p.replace(/^\/+/, '');
+          return a.pathname + a.search + a.hash;
+        }
+        return url;
+      } catch (e) {
+        return url;
+      }
+    }
+    var _replace = history.replaceState;
+    var _push = history.pushState;
+    history.replaceState = function(state, title, url) {
+      var u = (typeof url === 'string') ? normalize(url) : url;
+      return _replace.call(this, state, title, u);
+    };
+    history.pushState = function(state, title, url) {
+      var u = (typeof url === 'string') ? normalize(url) : url;
+      return _push.call(this, state, title, u);
+    };
+  } catch (e) {
+    console && console.warn && console.warn('SPA base monkeypatch error:', e);
+  }
+})(window.history, window.location);
+</script>
+
+<script>
+// __SPA_BASE_GUARD__ Ensure URL stays under the project base on GitHub Pages
+(function(l){
+  try {
+    var BASE = '/meine-tabelle/';
+    if (!/\.github\.io$/.test(l.hostname)) return;
+    var path = l.pathname || '/';
+    if (path === BASE) {
+      window.history.replaceState(null, null, BASE + '/' + l.search + l.hash);
+      return;
+    }
+    if (path === '/' || !path.startsWith(BASE + '/')) {
+      var fixed = path === '/' ? (BASE + '/') : (BASE + (path.startsWith('/') ? '' : '/') + path);
+      window.history.replaceState(null, null, fixed + l.search + l.hash);
+    }
+  } catch (e) {
+    console && console.warn && console.warn('SPA base guard error:', e);
+  }
+})(window.location);
+</script>
+
+<base href="/meine-tabelle/">
+
+<script>
 // __SPA_RESTORE__ GitHub Pages SPA URL restore
 (function(l){
   try {
